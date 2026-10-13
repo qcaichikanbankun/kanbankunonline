@@ -26,9 +26,8 @@
         
         .info-panel { margin: 5px 10px; padding: 10px; background: rgba(255,255,255,0.3); border-radius: 15px; border: 4px solid #fff; text-align: center; flex-shrink: 0; }
         .info-label { font-size: 1.3rem; margin-bottom: 2px; font-weight: bold; color: #eee; }
-        #target-info { font-size: 4.2rem; font-weight: 900; line-height: 1.0; word-break: break-all; color: #fff; text-shadow: 3px 3px 8px #000; }
+        #target-info { font-size: 3.5rem; font-weight: 900; line-height: 1.1; word-break: break-all; color: #fff; text-shadow: 3px 3px 8px #000; }
 
-        /* マスター変更ボタンエリア */
         .master-panel { background: transparent; padding: 0 10px; margin-top: auto; margin-bottom: 5px; }
 
         .log-display-area { background: #fff; color: #333; height: 115px; overflow: hidden; padding: 0 20px; border-bottom: 1px solid #ddd; }
@@ -134,6 +133,21 @@
         </div>
     </div>
 
+    <!-- 製品刻印（テキスト）スキャン用モーダル -->
+    <div id="engraving-modal" class="modal" style="justify-content:center; align-items:center; background:rgba(0,0,0,0.85); z-index:10001;">
+        <div style="background:#fff; padding:30px 20px; border-radius:15px; width:85%; max-width:400px; text-align:center;">
+            <h2 style="color:#007bff; margin-top:0;">1. 製品の刻印を読込</h2>
+            <p style="color:#444; font-size:1.1rem; margin-bottom:15px; font-weight:bold;">
+                下の入力欄をタップし、<br>「テキストをスキャン(枠線アイコン)」<br>で製品の刻印を読み取ってください。
+            </p>
+            <input type="text" id="engraving-input" placeholder="ここをタップしてスキャン" style="width:100%; padding:20px 10px; font-size:1.8rem; border:3px solid #007bff; border-radius:10px; margin-bottom:25px; box-sizing:border-box; text-align:center; font-weight:bold;">
+            <div style="display:flex; gap:10px;">
+                <button onclick="cancelEngraving()" style="flex:1; padding:15px; background:#6c757d; color:white; border:none; border-radius:10px; font-size:1.2rem; font-weight:bold;">キャンセル</button>
+                <button onclick="proceedToQRScan()" style="flex:1; padding:15px; background:#007bff; color:white; border:none; border-radius:10px; font-size:1.2rem; font-weight:bold;">次へ (かんばんQR)</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 管理者ロックオーバーレイ -->
     <div id="admin-lock-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #fff; z-index: 999999; text-align: center; flex-direction: column; justify-content: center; align-items: center; font-family: sans-serif;">
         <div style="padding: 20px;">
@@ -174,6 +188,7 @@ let activeMaster = null;
 let isProcessing = false;
 let lastSeenQR = "";
 let seenCount = 0;
+let pendingEngravingText = ""; 
 
 function playBeep(type) {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -277,35 +292,81 @@ function tick() {
     requestAnimationFrame(tick);
 }
 
+// ==========================================
+// マスター変更機能
+// ==========================================
+
 function startMasterSetMode() {
     if (isLocked) return;
+    document.getElementById("engraving-input").value = "";
+    document.getElementById("engraving-modal").style.display = "flex";
+}
+
+function cancelEngraving() {
+    document.getElementById("engraving-modal").style.display = "none";
+}
+
+function proceedToQRScan() {
+    const inputVal = document.getElementById("engraving-input").value.trim();
+    if (!inputVal) {
+        alert("製品の品番（刻印）を入力またはスキャンしてください。");
+        return;
+    }
+    
+    pendingEngravingText = inputVal;
+    document.getElementById("engraving-modal").style.display = "none";
+    
     isMasterSetMode = true;
     document.body.className = "wait";
     document.getElementById("status-display").style.fontSize = "4.5rem";
-    document.getElementById("status-display").innerText = "マスター読込中";
-    document.getElementById("target-info").innerText = "照合ガイドのQRをかざしてください";
+    document.getElementById("status-display").innerText = "2. QR読込";
+    document.getElementById("target-info").innerText = `刻印: ${pendingEngravingText}\n次にかんばんのQRをかざしてください`;
 }
 
 function setMasterByQR(qrData) {
     let matchedMaster = masters.find(m => m.code === qrData);
     
     if (matchedMaster) {
-        activeMaster = matchedMaster; 
-        playBeep("ok");
-        document.getElementById("target-info").innerText = activeMaster.name;
-        document.getElementById("status-display").style.fontSize = "8rem";
-        document.body.className = "ok";
-        document.getElementById("status-display").innerText = "SET!";
+        // ★修正：登録データに「刻印(engraving)」があればそれを使い、なければ古い仕様の「名前(name)」を使う
+        let targetEngraving = matchedMaster.engraving ? matchedMaster.engraving : matchedMaster.name;
         
-        setTimeout(() => {
-            isMasterSetMode = false;
-            isProcessing = false;
-            isInterval = false;
-            document.body.className = "";
-            document.getElementById("status-display").innerText = "READY";
-            resetCount();
-            alert(`マスターを「${activeMaster.name}」に変更しました。`);
-        }, 800);
+        let normEngraving = pendingEngravingText.replace(/\s+/g, '').toLowerCase();
+        let normMasterEngraving = targetEngraving.replace(/\s+/g, '').toLowerCase();
+        
+        if (normMasterEngraving.includes(normEngraving) || normEngraving.includes(normMasterEngraving)) {
+            activeMaster = matchedMaster; 
+            playBeep("ok");
+            document.getElementById("target-info").innerText = activeMaster.name;
+            document.getElementById("status-display").style.fontSize = "8rem";
+            document.body.className = "ok";
+            document.getElementById("status-display").innerText = "SET!";
+            
+            setTimeout(() => {
+                isMasterSetMode = false;
+                isProcessing = false;
+                isInterval = false;
+                document.body.className = "";
+                document.getElementById("status-display").innerText = "READY";
+                resetCount();
+                alert(`マスターを「${activeMaster.name}」に変更しました。\n製品と看板の一致を確認しました。`);
+            }, 800);
+        } else {
+            playBeep("ng");
+            document.body.className = "ng";
+            document.getElementById("status-display").style.fontSize = "4.5rem";
+            document.getElementById("status-display").innerText = "製品不一致！";
+            
+            setTimeout(() => {
+                alert(`【警告】異品混入の可能性があります！\n\n読み取ったかんばんは「${matchedMaster.name}」用ですが、スキャンした製品の刻印「${pendingEngravingText}」が、登録されている刻印「${targetEngraving}」と一致しません。`);
+                isMasterSetMode = false;
+                isProcessing = false;
+                isInterval = false;
+                document.body.className = "";
+                document.getElementById("status-display").style.fontSize = "8rem";
+                document.getElementById("status-display").innerText = "READY";
+                document.getElementById("target-info").innerText = activeMaster ? activeMaster.name : "未選択";
+            }, 500);
+        }
     } else {
         playBeep("ng");
         document.body.className = "ng";
@@ -313,7 +374,7 @@ function setMasterByQR(qrData) {
         document.getElementById("status-display").innerText = "未登録エラー";
         
         setTimeout(() => {
-            alert("この製品はマスター登録されていません");
+            alert("このかんばん（QR）はマスター登録されていません。先に「⚙️マスター登録」から登録してください。");
             isMasterSetMode = false;
             isProcessing = false;
             isInterval = false;
@@ -324,6 +385,8 @@ function setMasterByQR(qrData) {
         }, 500);
     }
 }
+
+// ==========================================
 
 function updateStatus(ok) {
     if (ok) {
@@ -403,12 +466,21 @@ function saveLog(res) {
     renderRecentLogs();
 }
 
+// ★修正：マスター登録時に「表示名」と「判定用刻印」の２つを聞くように変更
 function registerNew() {
     const img = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
     const code = jsQR(img.data, img.width, img.height);
     if (!code) return alert("QRをカメラに映してください");
-    const name = prompt("品番/製品名を入力:");
-    if (name) { masters.push({name: name, code: code.data}); saveMasters(); }
+    
+    const name = prompt("① 製品名（画面表示用）を入力してください:");
+    if (!name) return;
+    
+    const engraving = prompt("② 製品裏面の刻印（テキストスキャン判定用）を入力してください:");
+    if (!engraving) return;
+    
+    masters.push({ name: name.trim(), engraving: engraving.trim(), code: code.data });
+    saveMasters();
+    alert(`「${name.trim()}」を登録しました。\n(判定用刻印: ${engraving.trim()})`);
 }
 
 function saveMasters() {
@@ -416,10 +488,14 @@ function saveMasters() {
     renderEditList();
 }
 
+// ★修正：マスターリストの表示で「刻印」も見えるように変更
 function renderEditList() {
     document.getElementById("edit-list").innerHTML = masters.map((m, i) => `
         <div style="border-bottom:2px solid #ddd; padding:15px; display:flex; justify-content:space-between; align-items:center;">
-            <b style="font-size:1.4rem;">${m.name}</b>
+            <div style="text-align:left;">
+                <b style="font-size:1.4rem;">${m.name}</b><br>
+                <span style="font-size:0.9rem; color:#666;">刻印: ${m.engraving || '未設定（旧データ）'}</span>
+            </div>
             <button onclick="deleteMaster(${i})" style="color:red; background:none; border:2px solid red; padding:10px 15px; border-radius:8px; font-weight:bold; cursor:pointer;">削除</button>
         </div>
     `).join("");

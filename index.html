@@ -3,12 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>かんばん照合君（オンライン版）</title>
+    <title>かんばん照合君（全自動ショートカット版）</title>
     
-    <!-- QR解析ライブラリ -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-    <!-- ★追加：全自動文字認識（OCR）ライブラリ -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     
     <style>
         :root { --safe-area-bottom: env(safe-area-inset-bottom); }
@@ -84,8 +81,9 @@
         <div id="target-info">未選択</div>
     </div>
 
+    <!-- 刻印スキャンボタン -->
     <div class="master-panel">
-        <button onclick="startMasterSetMode()" style="width: 100%; height: 70px; background: #007bff; color: white; border: none; border-radius: 15px; font-size: 1.6rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
+        <button onclick="triggerAutoShortcutScan()" style="width: 100%; height: 70px; background: #007bff; color: white; border: none; border-radius: 15px; font-size: 1.6rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
             📷 刻印スキャンでマスター変更
         </button>
     </div>
@@ -143,7 +141,7 @@
 function getDevicePassword() { return localStorage.getItem("kb_v19_password") || "8181"; }
 
 const SCAN_INTERVAL_MS = 30000;
-const ANALYSIS_INTERVAL = 300; 
+const ANALYSIS_INTERVAL = 200;
 
 const video = document.createElement("video");
 const canvasElement = document.getElementById("canvas");
@@ -154,7 +152,7 @@ const miniCanvas = miniCanvasElement.getContext("2d");
 let audioCtx;
 let isLocked = false;
 let isInterval = false;
-let currentFacingMode = "user";
+let currentFacingMode = "user"; // 運用通りインカメラベース
 let okCount = 0; 
 let lastAnalysisTime = 0;
 
@@ -165,25 +163,10 @@ let isProcessing = false;
 let lastSeenQR = "";
 let seenCount = 0;
 
-// マスター変更用の状態管理変数
-let isMasterSetMode_Engraving = false; // 1段階目：刻印読取モード
-let isMasterSetMode_QR = false;        // 2段階目：QR読取モード
-let pendingMaster = null;              // 刻印が一致してQR待ち状態のマスター
-
-// ★全自動OCR（文字認識）エンジンの準備
-let ocrWorker = null;
-(async () => {
-    try {
-        ocrWorker = await Tesseract.createWorker('eng');
-        // 誤認識を防ぐため、アルファベットと数字とハイフンだけを探すように設定
-        await ocrWorker.setParameters({
-            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-',
-        });
-        console.log("OCR (自動文字認識) 準備完了");
-    } catch (e) {
-        console.error("OCR初期化エラー", e);
-    }
-})();
+// マスター変更用
+let isMasterSetMode_QR = false;
+let pendingMaster = null;
+let ntfyEventSource = null;
 
 function playBeep(type) {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -233,7 +216,6 @@ function tick() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
         canvasElement.width = video.videoWidth; canvasElement.height = video.videoHeight;
         canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
-        
         if (document.getElementById('mgmt-modal').style.display === 'flex') {
             miniCanvasElement.width = 400; miniCanvasElement.height = 400; miniCanvas.drawImage(video, 0, 0, 400, 400);
         }
@@ -242,120 +224,129 @@ function tick() {
         if (now - lastAnalysisTime > ANALYSIS_INTERVAL && !isProcessing) {
             lastAnalysisTime = now;
             
-            // ==========================================
-            // ① 刻印読込モード（自動文字認識）
-            // ==========================================
-            if (isMasterSetMode_Engraving) {
-                if (ocrWorker) {
-                    isProcessing = true;
-                    // カメラの映像をOCRエンジンに投げて文字を抽出
-                    ocrWorker.recognize(canvasElement).then(({ data: { text } }) => {
-                        let detectedText = text.replace(/\s+/g, '').toLowerCase(); // スペースを取り除いて小文字化
-                        
-                        // 読み取った文字の中に、マスター登録されている「刻印」または「製品名」が含まれているか探す
-                        let matchedMaster = masters.find(m => {
-                            let target = m.engraving ? m.engraving : m.name;
-                            let normTarget = target.replace(/\s+/g, '').toLowerCase();
-                            // 登録文字列が3文字以上で、かつ読み取ったテキストの中にそれが含まれていれば一致とみなす
-                            return normTarget.length >= 3 && detectedText.includes(normTarget);
-                        });
-                        
-                        if (matchedMaster) {
-                            // 登録されている刻印を発見！
-                            playBeep("ok");
-                            pendingMaster = matchedMaster; // 候補として保持
-                            isMasterSetMode_Engraving = false; // 刻印モード終了
-                            isMasterSetMode_QR = true;         // QRモード開始
-                            
-                            document.getElementById("status-display").innerText = "2. QR読込";
-                            document.getElementById("target-info").innerText = `刻印 [${matchedMaster.engraving || matchedMaster.name}] 確認\n次にかんばんQRをかざしてください`;
-                        }
-                        isProcessing = false;
-                    }).catch(e => {
-                        console.error("OCRエラー", e);
-                        isProcessing = false;
-                    });
-                }
-            } 
-            // ==========================================
-            // ② QR読込モード（通常 ＆ マスター設定第2段階）
-            // ==========================================
-            else {
-                const img = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-                const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+            const img = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+            const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+            
+            if (code && code.data.trim() !== "") {
+                if (code.data === lastSeenQR) { seenCount++; } else { lastSeenQR = code.data; seenCount = 1; }
                 
-                if (code && code.data.trim() !== "") {
-                    if (code.data === lastSeenQR) { seenCount++; } else { lastSeenQR = code.data; seenCount = 1; }
-                    
-                    if (seenCount >= 2) {
-                        // ▼ マスター変更 第2段階（QR読込）▼
-                        if (isMasterSetMode_QR) {
-                            isProcessing = true;
-                            if (code.data === pendingMaster.code) {
-                                // 刻印とQRが完全に一致！マスター変更完了
-                                activeMaster = pendingMaster; 
-                                playBeep("ok");
-                                document.getElementById("target-info").innerText = activeMaster.name;
-                                document.getElementById("status-display").style.fontSize = "8rem";
-                                document.body.className = "ok";
-                                document.getElementById("status-display").innerText = "SET!";
-                                
-                                setTimeout(() => {
-                                    isMasterSetMode_QR = false; isProcessing = false; isInterval = false;
-                                    document.body.className = ""; document.getElementById("status-display").innerText = "READY";
-                                    resetCount();
-                                    pendingMaster = null;
-                                }, 800);
-                            } else {
-                                // 刻印とQRが違う！（異品混入エラー）
-                                playBeep("ng");
-                                document.body.className = "ng";
-                                document.getElementById("status-display").style.fontSize = "4.5rem";
-                                document.getElementById("status-display").innerText = "製品不一致！";
-                                
-                                setTimeout(() => {
-                                    alert(`【警告】異品混入の可能性があります！\n\n読み取ったかんばんは別の製品用ですが、先ほどカメラで読み取った製品の刻印と一致しません。`);
-                                    isMasterSetMode_QR = false; isProcessing = false; isInterval = false;
-                                    document.body.className = ""; document.getElementById("status-display").style.fontSize = "8rem";
-                                    document.getElementById("status-display").innerText = "READY";
-                                    document.getElementById("target-info").innerText = activeMaster ? activeMaster.name : "未選択";
-                                    pendingMaster = null;
-                                }, 500);
-                            }
-                        } 
-                        // ▼ 通常のかんばん照合モード ▼
-                        else if (!isProcessing && !isLocked && !isInterval && activeMaster && document.getElementById("mgmt-modal").style.display !== "flex") {
-                            isProcessing = true;
-                            const ok = (code.data === activeMaster.code);
-                            playBeep(ok ? "ok" : "ng");
-                            updateStatus(ok);
-                            saveLog(ok ? "OK" : "NG");
-                            seenCount = 0; lastSeenQR = "";
+                if (seenCount >= 2) {
+                    if (isMasterSetMode_QR) {
+                        isProcessing = true;
+                        if (code.data === pendingMaster.code) {
+                            activeMaster = pendingMaster; 
+                            playBeep("ok");
+                            document.getElementById("target-info").innerText = activeMaster.name;
+                            document.getElementById("status-display").style.fontSize = "8rem";
+                            document.body.className = "ok";
+                            document.getElementById("status-display").innerText = "SET!";
+                            
+                            setTimeout(() => {
+                                isMasterSetMode_QR = false; isProcessing = false; isInterval = false;
+                                document.body.className = ""; document.getElementById("status-display").innerText = "READY";
+                                resetCount(); pendingMaster = null;
+                            }, 800);
+                        } else {
+                            playBeep("ng");
+                            document.body.className = "ng";
+                            document.getElementById("status-display").style.fontSize = "4.5rem";
+                            document.getElementById("status-display").innerText = "製品不一致！";
+                            
+                            setTimeout(() => {
+                                alert(`【警告】異品混入の可能性があります！\n\nかんばんは別の製品用ですが、先ほどカメラで読み取った製品の刻印と一致しません。`);
+                                isMasterSetMode_QR = false; isProcessing = false; isInterval = false;
+                                document.body.className = ""; document.getElementById("status-display").style.fontSize = "8rem";
+                                document.getElementById("status-display").innerText = "READY";
+                                document.getElementById("target-info").innerText = activeMaster ? activeMaster.name : "未選択";
+                                pendingMaster = null;
+                            }, 500);
                         }
+                    } 
+                    else if (!isProcessing && !isLocked && !isInterval && activeMaster && document.getElementById("mgmt-modal").style.display !== "flex") {
+                        isProcessing = true;
+                        const ok = (code.data === activeMaster.code);
+                        playBeep(ok ? "ok" : "ng");
+                        updateStatus(ok);
+                        saveLog(ok ? "OK" : "NG");
+                        seenCount = 0; lastSeenQR = "";
                     }
-                } else { seenCount = 0; lastSeenQR = ""; }
-            }
+                }
+            } else { seenCount = 0; lastSeenQR = ""; }
         }
     }
     requestAnimationFrame(tick);
 }
 
-// ＝ボタンを1回押すだけで始まる全自動マスター変更＝
-function startMasterSetMode() {
+// ==========================================
+// ★ ntfy を使った完全自動連携 ★
+// ==========================================
+function triggerAutoShortcutScan() {
     if (isLocked) return;
-    if (!ocrWorker) {
-        alert("文字認識エンジンを準備中です。数秒待ってからもう一度押してください。");
-        return;
-    }
     
-    isMasterSetMode_Engraving = true; // 刻印の自動認識スタート
-    isMasterSetMode_QR = false;
-    pendingMaster = null;
+    // 他のiPadと混線しないように、毎回ランダムな合言葉（トピック）を作る
+    const topic = "kb_ocr_" + Math.floor(Math.random() * 100000000);
     
+    // ntfyの受信待機を開始
+    if (ntfyEventSource) ntfyEventSource.close();
+    ntfyEventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
+    
+    // メッセージ（読み取りテキスト）が届いた瞬間の処理
+    ntfyEventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.event === "message") {
+            const detectedText = data.message;
+            ntfyEventSource.close(); // 受信を終了
+            processReceivedOCR(detectedText);
+        }
+    };
+
+    // UIを待機状態にする
     document.body.className = "wait";
     document.getElementById("status-display").style.fontSize = "4.5rem";
-    document.getElementById("status-display").innerText = "1. 刻印読込";
-    document.getElementById("target-info").innerText = "製品の刻印をカメラにかざしてください\n(シャッター操作は不要です)";
+    document.getElementById("status-display").innerText = "AI解析中...";
+    document.getElementById("target-info").innerText = "自動撮影・読込中...";
+
+    // ショートカットを呼び出し（合言葉を渡す）
+    const shortcutName = encodeURIComponent("自動刻印スキャン");
+    window.location.href = `shortcuts://run-shortcut?name=${shortcutName}&input=text&text=${topic}`;
+}
+
+function processReceivedOCR(detectedText) {
+    if (!detectedText || detectedText.trim() === "") {
+        playBeep("ng");
+        alert("文字が検出できませんでした。\n樹脂の凹凸に影ができるように少し傾けて、もう一度撮影してください。");
+        resetToReady();
+        return;
+    }
+
+    let normDetected = detectedText.replace(/\s+/g, '').toLowerCase();
+    let matchedMaster = masters.find(m => {
+        let target = m.engraving ? m.engraving : m.name;
+        let normTarget = target.replace(/\s+/g, '').toLowerCase();
+        return normTarget.length >= 2 && normDetected.includes(normTarget);
+    });
+
+    if (matchedMaster) {
+        playBeep("ok");
+        pendingMaster = matchedMaster; 
+        isMasterSetMode_QR = true;         
+        document.getElementById("status-display").innerText = "2. QR読込";
+        document.getElementById("target-info").innerText = `刻印 [${matchedMaster.engraving || matchedMaster.name}] 確認\n次にかんばんQRをかざしてください`;
+    } else {
+        playBeep("ng");
+        alert(`登録されているマスターと一致する刻印が見つかりませんでした。\n\n【読取結果】\n${detectedText}`);
+        resetToReady();
+    }
+}
+
+function resetToReady() {
+    isProcessing = false;
+    isMasterSetMode_QR = false;
+    pendingMaster = null;
+    document.body.className = ""; 
+    document.getElementById("status-display").style.fontSize = "8rem";
+    document.getElementById("status-display").innerText = "READY";
+    document.getElementById("target-info").innerText = activeMaster ? activeMaster.name : "未選択";
 }
 
 function updateStatus(ok) {
@@ -467,10 +458,7 @@ function clearLogs() {
 function confirmFinish() {
     if (isLocked) return;
     if (confirm("生産を終了しますか？\n（かんばん照合枚数もリセットされます）")) {
-        activeMaster = null; isInterval = false;
-        isMasterSetMode_Engraving = false; isMasterSetMode_QR = false; pendingMaster = null;
-        document.getElementById("target-info").innerText = "未選択";
-        document.body.className = ""; document.getElementById("status-display").innerText = "READY"; resetCount();
+        resetToReady(); resetCount();
     }
 }
 

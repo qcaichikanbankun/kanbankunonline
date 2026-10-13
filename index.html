@@ -98,6 +98,18 @@
         </div>
     </div>
 
+    <!-- ショートカットから戻った時用のペーストモーダル -->
+    <div id="paste-modal" class="modal" style="justify-content:center; align-items:center; background:rgba(0,0,0,0.85); z-index:10001;">
+        <div style="background:#fff; padding:30px 20px; border-radius:15px; width:85%; max-width:400px; text-align:center;">
+            <h2 style="color:#007bff; margin-top:0;">スキャン完了！</h2>
+            <p style="color:#444; font-size:1.1rem; margin-bottom:20px; font-weight:bold;">
+                下のボタンを押して、<br>読み取った文字を反映してください。
+            </p>
+            <button onclick="processPaste()" style="width:100%; padding:20px; background:#28a745; color:white; border:none; border-radius:10px; font-size:1.5rem; font-weight:bold; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">📋 結果を貼り付け</button>
+            <button onclick="document.getElementById('paste-modal').style.display='none'" style="width:100%; padding:15px; background:none; color:#666; border:none; font-size:1.1rem; margin-top:10px; text-decoration:underline;">キャンセル</button>
+        </div>
+    </div>
+
     <div id="mgmt-modal" class="modal">
         <div class="modal-content">
             <h2>マスター登録・詳細設定</h2>
@@ -245,11 +257,47 @@ function tick() {
     requestAnimationFrame(tick);
 }
 
-// ＝ショートカット起動用関数＝
+// ＝ショートカット起動＆戻ってきた時の処理＝
 function triggerShortcutScan() {
     if (isLocked) return;
-    // 「刻印スキャン」という名前のiOSショートカットを自動起動
+    // Safariに戻ってきた時に「ペースト画面」を出すための目印を付ける
+    localStorage.setItem("kb_waiting_shortcut", "true");
     window.location.href = "shortcuts://run-shortcut?name=" + encodeURIComponent("刻印スキャン");
+}
+
+// Safariに画面が戻ってきた（アクティブになった）瞬間を検知する
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+        if (localStorage.getItem("kb_waiting_shortcut") === "true") {
+            localStorage.removeItem("kb_waiting_shortcut");
+            document.getElementById("paste-modal").style.display = "flex";
+        }
+    }
+});
+
+// クリップボードの文字を読み取ってQR待機モードへ
+async function processPaste() {
+    try {
+        const text = await navigator.clipboard.readText();
+        if (!text || text.trim() === "") {
+            alert("クリップボードに文字がありません。読み取りに失敗した可能性があります。");
+            document.getElementById("paste-modal").style.display = "none";
+            return;
+        }
+        
+        document.getElementById("paste-modal").style.display = "none";
+        
+        // 読み取った文字を保持して、かんばんQR読込へ
+        pendingEngravingText = text.trim();
+        isMasterSetMode = true;
+        document.body.className = "wait";
+        document.getElementById("status-display").style.fontSize = "4.5rem";
+        document.getElementById("status-display").innerText = "2. QR読込";
+        document.getElementById("target-info").innerText = `刻印: ${pendingEngravingText}\n次にかんばんQRをかざしてください`;
+        
+    } catch (err) {
+        alert("ペーストが許可されませんでした。iPadの通知で「ペーストを許可」を選択してください。");
+    }
 }
 
 function setMasterByQR(qrData) {
@@ -471,22 +519,6 @@ function sendNotification(messageText) {
     const deviceName = localStorage.getItem("kb_v19_device_name") || "未設定端末";
     const productName = activeMaster ? activeMaster.name : "製品未選択";
     fetch(gasUrl, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `【${deviceName}】\n${messageText}\n(対象: ${productName})` }) }).catch(e => console.error(e));
-}
-
-// ＝ショートカットから戻ってきた時の全自動処理＝
-const params = new URLSearchParams(window.location.search);
-const urlEngraving = params.get("engraving");
-if (urlEngraving) {
-    // 次回リロード時に誤作動しないようURLを綺麗にする
-    window.history.replaceState(null, "", window.location.pathname);
-    
-    // 抽出された文字を持って、即座にQR読み取りモードへ直行
-    pendingEngravingText = urlEngraving.trim();
-    isMasterSetMode = true;
-    document.body.className = "wait";
-    document.getElementById("status-display").style.fontSize = "4.5rem";
-    document.getElementById("status-display").innerText = "2. QR読込";
-    document.getElementById("target-info").innerText = `刻印: ${pendingEngravingText}\n次にかんばんQRをかざしてください`;
 }
 
 renderEditList(); 

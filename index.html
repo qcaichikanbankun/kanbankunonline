@@ -152,7 +152,7 @@ const miniCanvas = miniCanvasElement.getContext("2d");
 let audioCtx;
 let isLocked = false;
 let isInterval = false;
-let currentFacingMode = "user"; // 運用通りインカメラベース
+let currentFacingMode = "user"; // インカメラ固定
 let okCount = 0; 
 let lastAnalysisTime = 0;
 
@@ -166,7 +166,6 @@ let seenCount = 0;
 // マスター変更用
 let isMasterSetMode_QR = false;
 let pendingMaster = null;
-let ntfyEventSource = null;
 
 function playBeep(type) {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -278,38 +277,83 @@ function tick() {
 }
 
 // ==========================================
-// ★ ntfy を使った完全自動連携 ★
+// ★ ntfy 通信 ＆ キャンセル機能 ★
 // ==========================================
+
+// 万が一フリーズした場合、画面のどこかをタップしたら待機を解除する機能
+document.body.addEventListener("click", function() {
+    if (document.body.className === "wait" && document.getElementById("status-display").innerText === "AI解析中...") {
+        resetToReady();
+        localStorage.removeItem("kb_pending_topic");
+        // alert("読み取りをキャンセルしました。もう一度お試しください。");
+    }
+});
+
 function triggerAutoShortcutScan() {
     if (isLocked) return;
     
-    // 他のiPadと混線しないように、毎回ランダムな合言葉（トピック）を作る
+    // 合言葉を作成してブラウザに記憶させる
     const topic = "kb_ocr_" + Math.floor(Math.random() * 100000000);
-    
-    // ntfyの受信待機を開始
-    if (ntfyEventSource) ntfyEventSource.close();
-    ntfyEventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
-    
-    // メッセージ（読み取りテキスト）が届いた瞬間の処理
-    ntfyEventSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.event === "message") {
-            const detectedText = data.message;
-            ntfyEventSource.close(); // 受信を終了
-            processReceivedOCR(detectedText);
-        }
-    };
+    localStorage.setItem("kb_pending_topic", topic);
 
-    // UIを待機状態にする
     document.body.className = "wait";
     document.getElementById("status-display").style.fontSize = "4.5rem";
     document.getElementById("status-display").innerText = "AI解析中...";
-    document.getElementById("target-info").innerText = "自動撮影・読込中...";
+    document.getElementById("target-info").innerText = "自動撮影・読込中...\n(画面をタップするとキャンセルできます)";
 
-    // ショートカットを呼び出し（合言葉を渡す）
+    // ショートカット起動
     const shortcutName = encodeURIComponent("自動刻印スキャン");
     window.location.href = `shortcuts://run-shortcut?name=${shortcutName}&input=text&text=${topic}`;
 }
+
+// Safariに戻ってきた瞬間に、自らデータを取りに行く（Safariおやすみ対策）
+document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "visible") {
+        const topic = localStorage.getItem("kb_pending_topic");
+        if (topic) {
+            try {
+                // ntfyのサーバーに「この合言葉のメッセージ届いてる？」と聞きに行く
+                const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1`);
+                const text = await res.text();
+                const lines = text.trim().split('\n');
+                let detectedText = "";
+                
+                for (let line of lines) {
+                    if (!line) continue;
+                    const data = JSON.parse(line);
+                    if (data.event === "message" && data.message) {
+                        detectedText = data.message;
+                    }
+                }
+                
+                if (detectedText) {
+                    localStorage.removeItem("kb_pending_topic");
+                    processReceivedOCR(detectedText);
+                } else {
+                    // もし一瞬早すぎて届いていなかった場合、1秒後にもう一度だけ探す
+                    setTimeout(async () => {
+                        const res2 = await fetch(`https://ntfy.sh/${topic}/json?poll=1`);
+                        const text2 = await res2.text();
+                        const lines2 = text2.trim().split('\n');
+                        for (let line of lines2) {
+                            if (!line) continue;
+                            const data = JSON.parse(line);
+                            if (data.event === "message" && data.message) {
+                                detectedText = data.message;
+                            }
+                        }
+                        if (detectedText) {
+                            localStorage.removeItem("kb_pending_topic");
+                            processReceivedOCR(detectedText);
+                        }
+                    }, 1000);
+                }
+            } catch(e) {
+                console.error("通信エラー", e);
+            }
+        }
+    }
+});
 
 function processReceivedOCR(detectedText) {
     if (!detectedText || detectedText.trim() === "") {

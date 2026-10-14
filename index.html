@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>かんばん照合君（全自動ショートカット版）</title>
+    <title>かんばん照合君（純正OCR×ペア版）</title>
     
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     
@@ -14,8 +14,12 @@
         body.ng { background:#dc3545 !important; }
         body.wait { background:#444 !important; }
 
-        #status-display { font-size: 8rem; font-weight: 900; height: 1.1em; text-shadow: 6px 6px 12px rgba(0,0,0,0.9); text-align: center; line-height: 1.0; flex-shrink: 0; margin-top: 10px; }
-        #count-display { font-size: 2.5rem; font-weight: 900; text-align: center; color: #ffeb3b; text-shadow: 2px 2px 4px #000; margin-bottom: 5px; }
+        #status-display { font-size: 7rem; font-weight: 900; height: 1.1em; text-shadow: 6px 6px 12px rgba(0,0,0,0.9); text-align: center; line-height: 1.0; flex-shrink: 0; margin-top: 10px; }
+        
+        .count-container { display: flex; justify-content: space-around; background: rgba(255,255,255,0.1); margin: 5px 10px; border-radius: 10px; padding: 10px 5px; }
+        .count-box { text-align: center; font-weight: bold; }
+        .count-label { font-size: 1.3rem; color: #ccc; }
+        .count-value { font-size: 3.5rem; color: #ffeb3b; text-shadow: 2px 2px 4px #000; margin-top: 5px; line-height: 1.1; }
 
         .video-container { position: relative; width: 85%; max-width: 380px; aspect-ratio: 1 / 1; border: 5px solid #fff; border-radius: 20px; overflow: hidden; margin: 0 auto 5px; background: #222; flex-shrink: 0; }
         #canvas { width: 100%; height: 100%; object-fit: cover; }
@@ -24,44 +28,34 @@
         #camera-switch { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; border: 2px solid #fff; border-radius: 50%; width: 50px; height: 50px; font-size: 1.5rem; display: flex; justify-content: center; align-items: center; z-index: 10; cursor: pointer; }
         
         .info-panel { margin: 5px 10px; padding: 10px; background: rgba(255,255,255,0.3); border-radius: 15px; border: 4px solid #fff; text-align: center; flex-shrink: 0; }
-        .info-label { font-size: 1.3rem; margin-bottom: 2px; font-weight: bold; color: #eee; }
-        #target-info { font-size: 3.5rem; font-weight: 900; line-height: 1.1; word-break: break-all; color: #fff; text-shadow: 3px 3px 8px #000; }
+        .info-label { font-size: 1.2rem; margin-bottom: 2px; font-weight: bold; color: #eee; }
+        #target-info { font-size: 4.5rem; font-weight: 900; line-height: 1.1; word-break: break-all; color: #fff; text-shadow: 3px 3px 8px #000; }
 
-        .master-panel { background: transparent; padding: 0 10px; margin-top: auto; margin-bottom: 5px; }
+        .master-panel { background: transparent; padding: 0 10px; margin-top: auto; margin-bottom: 5px; display: flex; gap: 10px; }
 
-        .log-display-area { background: #fff; color: #333; height: 115px; overflow: hidden; padding: 0 20px; border-bottom: 1px solid #ddd; }
-        .log-item { padding: 6px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; font-weight: bold; font-size: 1.1rem; }
+        .log-display-area { background: #fff; color: #333; height: 105px; overflow: hidden; padding: 0 20px; border-bottom: 1px solid #ddd; }
+        .log-item { padding: 4px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; font-weight: bold; font-size: 1.1rem; }
 
         .main-panel { background-color: #ffffff; width: 95%; margin: 5px auto 10px; border-radius: 15px; padding-bottom: 5px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); overflow: hidden; }
 
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 15px; background: #ffffff; }
         .btn-main, .btn-sub { width: 100%; height: 60px; border: none; border-radius: 10px; font-size: 15px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; }
 
-        #lock-overlay { 
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(220, 53, 69, 0.98); 
-            display: none; flex-direction: column; justify-content: center; align-items: center; 
-            z-index: 10000; text-align: center; color: white;
-        }
+        #lock-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(220, 53, 69, 0.98); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; text-align: center; color: white; }
         #lock-overlay h1 { font-size: 6rem; margin: 0; font-weight: 900; }
         #lock-overlay p { font-size: 1.5rem; margin-bottom: 30px; }
-        #pw-input { 
-            font-size: 3rem; width: 80%; max-width: 300px; padding: 15px; 
-            text-align: center; border-radius: 15px; border: none; margin-bottom: 20px;
-            -webkit-text-security: disc;
-        }
+        #pw-input { font-size: 3rem; width: 80%; max-width: 300px; padding: 15px; text-align: center; border-radius: 15px; border: none; margin-bottom: 20px; -webkit-text-security: disc; }
         .btn-unlock { background: white; color: #dc3545; padding: 20px 50px; font-size: 1.5rem; border-radius: 15px; font-weight: 900; cursor: pointer; }
 
         #start-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:#111; display:flex; justify-content:center; align-items:center; z-index:9999; font-size:2rem; font-weight:bold; color:white; cursor: pointer; }
         .modal { position:fixed; top:0; left:0; width:100%; height:100%; display:none; flex-direction:column; background:#fff; z-index:5000; color:#333; }
         .modal-content { padding: 20px; flex-grow: 1; overflow-y: auto; }
-        #mini-canvas { width: 100%; max-width: 320px; transform: scaleX(-1); border-radius: 15px; border: 3px solid #000; }
     </style>
 </head>
 <body>
     <div id="lock-overlay">
         <h1>NG 発生</h1>
-        <p>確認が必要です。パスワードを入力してください。</p>
+        <p id="lock-reason">異品混入の可能性があります！<br>管理者のパスワードが必要です。</p>
         <input type="number" id="pw-input" placeholder="****" inputmode="numeric">
         <button class="btn-unlock" onclick="unlock()">解除</button>
     </div>
@@ -69,7 +63,17 @@
     <div id="start-overlay" onclick="startApp()">タップして開始</div>
     
     <div id="status-display">READY</div>
-    <div id="count-display">かんばん照合: 0 枚</div>
+    
+    <div class="count-container">
+        <div class="count-box">
+            <div class="count-label">完成品かんばん</div>
+            <div class="count-value" id="count-finished">0 枚</div>
+        </div>
+        <div class="count-box">
+            <div class="count-label">仕掛品かんばん</div>
+            <div class="count-value" id="count-wip">0 枚</div>
+        </div>
+    </div>
     
     <div class="video-container">
         <div id="camera-switch" onclick="switchCamera()">🔄</div>
@@ -81,10 +85,12 @@
         <div id="target-info">未選択</div>
     </div>
 
-    <!-- 刻印スキャンボタン -->
     <div class="master-panel">
-        <button onclick="triggerAutoShortcutScan()" style="width: 100%; height: 70px; background: #007bff; color: white; border: none; border-radius: 15px; font-size: 1.6rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
-            📷 刻印スキャンでマスター変更
+        <button onclick="triggerShortcutOCR()" style="flex: 1; height: 75px; background: #007bff; color: white; border: none; border-radius: 15px; font-size: 1.6rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
+            📷 刻印で段替え
+        </button>
+        <button onclick="startMasterSetMode()" style="flex: 1; height: 75px; background: #28a745; color: white; border: none; border-radius: 15px; font-size: 1.6rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
+            🔄 QRで段替え
         </button>
     </div>
 
@@ -106,8 +112,8 @@
             <button class="btn-sub" style="width:100%; margin-bottom:20px; padding:15px; border:2px solid #28a745; background:#fff; color:#28a745; font-weight:bold;" onclick="setDevicePassword()">🔑 解除パスワードを変更する</button>
 
             <div style="padding:15px;background:#eee;border-radius:15px;text-align:center;margin-bottom:20px;">
-                <canvas id="mini-canvas"></canvas>
-                <button class="btn-main" style="width:100%; margin-top:15px; padding:20px; background:#28a745; color: #fff; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);" onclick="registerNew()">今のQRを登録</button>
+                <p style="font-weight:bold; color:#333; margin-top:0;">新しいペア（完成品・仕掛品・刻印）を登録します</p>
+                <button class="btn-main" style="width:100%; padding:20px; background:#28a745; color: #fff; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);" onclick="startRegisterMode()">▶️ 新規登録を開始</button>
             </div>
             <div id="edit-list"></div>
         </div>
@@ -133,39 +139,41 @@
         <div style="padding: 20px;">
             <h1 style="color: #ffc107; font-size: 2.5rem; margin-bottom: 20px;">⚠️ 管理者呼び出し中</h1>
             <p style="font-size: 1.5rem; line-height: 1.6;">管理者が来るまで<br><span style="color: #f44336; font-weight: bold;">作業を中断すること</span></p>
-            <p style="margin-top: 50px; color: #888;">(管理者が解除パスワードを入力してください)</p>
         </div>
     </div>
 
 <script>
-function getDevicePassword() { return localStorage.getItem("kb_v19_password") || "8181"; }
+function getDevicePassword() { return localStorage.getItem("kb_v20_password") || "8181"; }
 
-const SCAN_INTERVAL_MS = 30000;
+const SCAN_INTERVAL_MS = 2500;
 const ANALYSIS_INTERVAL = 200;
 
 const video = document.createElement("video");
 const canvasElement = document.getElementById("canvas");
 const canvas = canvasElement.getContext("2d", { willReadFrequently: true });
-const miniCanvasElement = document.getElementById("mini-canvas");
-const miniCanvas = miniCanvasElement.getContext("2d");
 
 let audioCtx;
 let isLocked = false;
 let isInterval = false;
-let currentFacingMode = "user"; // インカメラ固定
-let okCount = 0; 
+let currentFacingMode = "user";
 let lastAnalysisTime = 0;
 
-let masters = JSON.parse(localStorage.getItem("kb_v19_masters")) || [];
-let logs = JSON.parse(localStorage.getItem("kb_v19_logs")) || [];
+let masters = JSON.parse(localStorage.getItem("kb_v20_masters")) || [];
+let logs = JSON.parse(localStorage.getItem("kb_v20_logs")) || [];
 let activeMaster = null;
+
+let finishedCount = 0;
+let wipCount = 0;
+
 let isProcessing = false;
 let lastSeenQR = "";
 let seenCount = 0;
+let lastScannedType = null; 
 
-// マスター変更用
-let isMasterSetMode_QR = false;
-let pendingMaster = null;
+let masterSetMode = 0;
+let tempSetMaster = null;
+let registerMode = 0;
+let tempRegFinishedCode = "";
 
 function playBeep(type) {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -215,12 +223,9 @@ function tick() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
         canvasElement.width = video.videoWidth; canvasElement.height = video.videoHeight;
         canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
-        if (document.getElementById('mgmt-modal').style.display === 'flex') {
-            miniCanvasElement.width = 400; miniCanvasElement.height = 400; miniCanvas.drawImage(video, 0, 0, 400, 400);
-        }
         
         const now = Date.now();
-        if (now - lastAnalysisTime > ANALYSIS_INTERVAL && !isProcessing) {
+        if (now - lastAnalysisTime > ANALYSIS_INTERVAL && !isProcessing && !isLocked && !isInterval) {
             lastAnalysisTime = now;
             
             const img = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
@@ -230,45 +235,8 @@ function tick() {
                 if (code.data === lastSeenQR) { seenCount++; } else { lastSeenQR = code.data; seenCount = 1; }
                 
                 if (seenCount >= 2) {
-                    if (isMasterSetMode_QR) {
-                        isProcessing = true;
-                        if (code.data === pendingMaster.code) {
-                            activeMaster = pendingMaster; 
-                            playBeep("ok");
-                            document.getElementById("target-info").innerText = activeMaster.name;
-                            document.getElementById("status-display").style.fontSize = "8rem";
-                            document.body.className = "ok";
-                            document.getElementById("status-display").innerText = "SET!";
-                            
-                            setTimeout(() => {
-                                isMasterSetMode_QR = false; isProcessing = false; isInterval = false;
-                                document.body.className = ""; document.getElementById("status-display").innerText = "READY";
-                                resetCount(); pendingMaster = null;
-                            }, 800);
-                        } else {
-                            playBeep("ng");
-                            document.body.className = "ng";
-                            document.getElementById("status-display").style.fontSize = "4.5rem";
-                            document.getElementById("status-display").innerText = "製品不一致！";
-                            
-                            setTimeout(() => {
-                                alert(`【警告】異品混入の可能性があります！\n\nかんばんは別の製品用ですが、先ほどカメラで読み取った製品の刻印と一致しません。`);
-                                isMasterSetMode_QR = false; isProcessing = false; isInterval = false;
-                                document.body.className = ""; document.getElementById("status-display").style.fontSize = "8rem";
-                                document.getElementById("status-display").innerText = "READY";
-                                document.getElementById("target-info").innerText = activeMaster ? activeMaster.name : "未選択";
-                                pendingMaster = null;
-                            }, 500);
-                        }
-                    } 
-                    else if (!isProcessing && !isLocked && !isInterval && activeMaster && document.getElementById("mgmt-modal").style.display !== "flex") {
-                        isProcessing = true;
-                        const ok = (code.data === activeMaster.code);
-                        playBeep(ok ? "ok" : "ng");
-                        updateStatus(ok);
-                        saveLog(ok ? "OK" : "NG");
-                        seenCount = 0; lastSeenQR = "";
-                    }
+                    processQR(code.data);
+                    seenCount = 0; lastSeenQR = "";
                 }
             } else { seenCount = 0; lastSeenQR = ""; }
         }
@@ -276,194 +244,244 @@ function tick() {
     requestAnimationFrame(tick);
 }
 
-// ==========================================
-// ★ ntfy 通信 ＆ キャンセル機能 ★
-// ==========================================
-
-// 万が一フリーズした場合、画面のどこかをタップしたら待機を解除する機能
-document.body.addEventListener("click", function() {
-    if (document.body.className === "wait" && document.getElementById("status-display").innerText === "AI解析中...") {
-        resetToReady();
-        localStorage.removeItem("kb_pending_topic");
-        // alert("読み取りをキャンセルしました。もう一度お試しください。");
-    }
-});
-
-function triggerAutoShortcutScan() {
-    if (isLocked) return;
+// ★ URLパラメータに「engraving（刻印）」が含まれていたら自動で段替え処理
+window.addEventListener("DOMContentLoaded", () => {
+    const params = new URLSearchParams(window.location.search);
+    const engravingText = params.get("engraving");
     
-    // 合言葉を作成してブラウザに記憶させる
-    const topic = "kb_ocr_" + Math.floor(Math.random() * 100000000);
-    localStorage.setItem("kb_pending_topic", topic);
+    if (engravingText) {
+        window.history.replaceState({}, document.title, window.location.pathname); // URLを綺麗にする
+        
+        let normDetected = engravingText.replace(/\s+/g, '').toLowerCase();
+        let matchedMaster = masters.find(m => {
+            let target = m.engraving || m.name;
+            let normTarget = target.replace(/\s+/g, '').toLowerCase();
+            return normTarget.length >= 2 && normDetected.includes(normTarget);
+        });
 
-    document.body.className = "wait";
-    document.getElementById("status-display").style.fontSize = "4.5rem";
-    document.getElementById("status-display").innerText = "AI解析中...";
-    document.getElementById("target-info").innerText = "自動撮影・読込中...\n(画面をタップするとキャンセルできます)";
-
-    // ショートカット起動
-    const shortcutName = encodeURIComponent("自動刻印スキャン");
-    window.location.href = `shortcuts://run-shortcut?name=${shortcutName}&input=text&text=${topic}`;
-}
-
-// Safariに戻ってきた瞬間に、自らデータを取りに行く（Safariおやすみ対策）
-document.addEventListener("visibilitychange", async () => {
-    if (document.visibilityState === "visible") {
-        const topic = localStorage.getItem("kb_pending_topic");
-        if (topic) {
-            try {
-                // ntfyのサーバーに「この合言葉のメッセージ届いてる？」と聞きに行く
-                const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1`);
-                const text = await res.text();
-                const lines = text.trim().split('\n');
-                let detectedText = "";
-                
-                for (let line of lines) {
-                    if (!line) continue;
-                    const data = JSON.parse(line);
-                    if (data.event === "message" && data.message) {
-                        detectedText = data.message;
-                    }
-                }
-                
-                if (detectedText) {
-                    localStorage.removeItem("kb_pending_topic");
-                    processReceivedOCR(detectedText);
-                } else {
-                    // もし一瞬早すぎて届いていなかった場合、1秒後にもう一度だけ探す
-                    setTimeout(async () => {
-                        const res2 = await fetch(`https://ntfy.sh/${topic}/json?poll=1`);
-                        const text2 = await res2.text();
-                        const lines2 = text2.trim().split('\n');
-                        for (let line of lines2) {
-                            if (!line) continue;
-                            const data = JSON.parse(line);
-                            if (data.event === "message" && data.message) {
-                                detectedText = data.message;
-                            }
-                        }
-                        if (detectedText) {
-                            localStorage.removeItem("kb_pending_topic");
-                            processReceivedOCR(detectedText);
-                        }
-                    }, 1000);
-                }
-            } catch(e) {
-                console.error("通信エラー", e);
-            }
+        if (matchedMaster) {
+            playBeep("ok");
+            tempSetMaster = matchedMaster; 
+            masterSetMode = 2; // 仕掛品の確認待ち状態にする
+            document.body.className = "wait";
+            document.getElementById("status-display").style.fontSize = "4.5rem";
+            document.getElementById("status-display").innerText = "段替え: 2/2";
+            document.getElementById("target-info").innerHTML = `刻印 <span style="color:#ffeb3b;">${matchedMaster.name}</span> 確認！<br>次に【仕掛品】かんばんをスキャン`;
+        } else {
+            playBeep("ng");
+            alert(`登録されているマスターと一致する刻印が見つかりませんでした。\n\n【カメラの読取結果】\n${engravingText}`);
         }
     }
 });
 
-function processReceivedOCR(detectedText) {
-    if (!detectedText || detectedText.trim() === "") {
-        playBeep("ng");
-        alert("文字が検出できませんでした。\n樹脂の凹凸に影ができるように少し傾けて、もう一度撮影してください。");
-        resetToReady();
+function triggerShortcutOCR() {
+    if (isLocked) return;
+    const shortcutName = encodeURIComponent("自動刻印スキャン");
+    window.location.href = `shortcuts://run-shortcut?name=${shortcutName}`;
+}
+
+function triggerNG(title, message, logText) {
+    playBeep("ng");
+    isLocked = true;
+    document.body.className = "ng";
+    document.getElementById("status-display").style.fontSize = "4.5rem";
+    document.getElementById("status-display").innerText = title;
+    saveLog(logText);
+
+    sendNotification(`【NG発生】${message.replace(/\n/g, " ")}`);
+
+    const deviceName = localStorage.getItem("kb_v20_device_name") || "未設定端末";
+    const shortcutMsg = `【${deviceName}】\n【NG発生】${message.replace(/\n/g, " ")}\n(生産中: ${activeMaster ? activeMaster.name : "未選択"})`;
+    const shortcutName = encodeURIComponent("QR通知");
+
+    setTimeout(() => { window.location.href = `shortcuts://run-shortcut?name=${shortcutName}&input=text&text=${encodeURIComponent(shortcutMsg)}`; }, 1500);
+
+    setTimeout(() => {
+        document.getElementById("lock-reason").innerHTML = `${message.replace(/\n/g, "<br>")}<br><br>管理者のパスワードが必要です。`;
+        document.getElementById("lock-overlay").style.display = "flex";
+        document.getElementById("pw-input").focus();
+    }, 500);
+}
+
+function processQR(qrData) {
+    if (registerMode === 1) {
+        isProcessing = true;
+        tempRegFinishedCode = qrData;
+        playBeep("ok");
+        document.getElementById("status-display").innerText = "登録: 2/2";
+        document.getElementById("target-info").innerText = "次に【仕掛品】かんばんのQRを\nスキャンしてください";
+        setTimeout(() => { isProcessing = false; registerMode = 2; }, 1000); 
+        return;
+    } 
+    else if (registerMode === 2) {
+        isProcessing = true;
+        playBeep("ok");
+        setTimeout(() => {
+            const name = prompt("① 完成品・仕掛品のペアをスキャンしました。\nこの製品名（品番）を入力してください:");
+            if (name && name.trim() !== "") {
+                const eng = prompt("② この製品の【刻印】の文字を入力してください:\n(※カメラでの自動段替え用に使います)");
+                masters.push({ 
+                    name: name.trim(), 
+                    finishedCode: tempRegFinishedCode, 
+                    wipCode: qrData,
+                    engraving: eng ? eng.trim() : ""
+                });
+                saveMasters();
+                alert(`「${name.trim()}」のペアと刻印を登録しました！`);
+            } else { alert("登録をキャンセルしました。"); }
+            resetToReady();
+        }, 300);
         return;
     }
 
-    let normDetected = detectedText.replace(/\s+/g, '').toLowerCase();
-    let matchedMaster = masters.find(m => {
-        let target = m.engraving ? m.engraving : m.name;
-        let normTarget = target.replace(/\s+/g, '').toLowerCase();
-        return normTarget.length >= 2 && normDetected.includes(normTarget);
-    });
-
-    if (matchedMaster) {
-        playBeep("ok");
-        pendingMaster = matchedMaster; 
-        isMasterSetMode_QR = true;         
-        document.getElementById("status-display").innerText = "2. QR読込";
-        document.getElementById("target-info").innerText = `刻印 [${matchedMaster.engraving || matchedMaster.name}] 確認\n次にかんばんQRをかざしてください`;
-    } else {
-        playBeep("ng");
-        alert(`登録されているマスターと一致する刻印が見つかりませんでした。\n\n【読取結果】\n${detectedText}`);
-        resetToReady();
+    if (masterSetMode === 1) {
+        isProcessing = true;
+        let matched = masters.find(m => m.finishedCode === qrData);
+        if (matched) {
+            tempSetMaster = matched;
+            playBeep("ok");
+            document.getElementById("status-display").innerText = "段替え: 2/2";
+            document.getElementById("target-info").innerText = `[${matched.name}]\n次に新しい【仕掛品】かんばんを\nスキャンしてください`;
+            setTimeout(() => { isProcessing = false; masterSetMode = 2; }, 1000);
+        } else { showError("未登録エラー", "この完成品かんばんは登録されていません。\n先にマスター登録を行ってください。"); }
+        return;
     }
+    else if (masterSetMode === 2) {
+        isProcessing = true;
+        if (qrData === tempSetMaster.wipCode) {
+            activeMaster = tempSetMaster;
+            lastScannedType = null; 
+            playBeep("ok");
+            document.body.className = "ok";
+            document.getElementById("status-display").style.fontSize = "5rem";
+            document.getElementById("status-display").innerText = "段替え完了！";
+            document.getElementById("target-info").innerText = activeMaster.name;
+            setTimeout(() => { resetCount(); resetToReady(); }, 1500);
+        } else { showError("不一致エラー", `段替え失敗！\n\n読み取った仕掛品かんばんは、製品「${tempSetMaster.name}」のペアではありません！`); }
+        return;
+    }
+
+    if (activeMaster && document.getElementById("mgmt-modal").style.display !== "flex") {
+        isProcessing = true;
+        if (qrData === activeMaster.finishedCode) {
+            if (lastScannedType === "fin") {
+                triggerNG("順序エラー", "【完成品】かんばんが\n連続でスキャンされました！", "NG (順序エラー:完成品連続)");
+            } else {
+                lastScannedType = "fin";
+                playBeep("ok");
+                finishedCount++;
+                updateStatusDisplay("OK", "完成品かんばん OK");
+                saveLog("OK (完成品)");
+                updateCounts();
+            }
+        } 
+        else if (qrData === activeMaster.wipCode) {
+            if (lastScannedType === "wip") {
+                triggerNG("順序エラー", "【仕掛品】かんばんが\n連続でスキャンされました！", "NG (順序エラー:仕掛品連続)");
+            } else {
+                lastScannedType = "wip";
+                playBeep("ok");
+                wipCount++;
+                updateStatusDisplay("OK", "仕掛品かんばん OK");
+                saveLog("OK (仕掛品)");
+                updateCounts();
+            }
+        } 
+        else { triggerNG("製品不一致", "登録と異なるかんばん（異品）が\nスキャンされました！", "NG (異品混入)"); }
+    }
+}
+
+function startRegisterMode() {
+    if (isLocked) return;
+    document.getElementById("mgmt-modal").style.display = "none"; 
+    registerMode = 1; masterSetMode = 0;
+    document.body.className = "wait";
+    document.getElementById("status-display").style.fontSize = "5rem";
+    document.getElementById("status-display").innerText = "登録: 1/2";
+    document.getElementById("target-info").innerText = "マスター登録する【完成品】かんばんを\nカメラに映してください";
+}
+
+function startMasterSetMode() {
+    if (isLocked) return;
+    registerMode = 0; masterSetMode = 1; tempSetMaster = null;
+    document.body.className = "wait";
+    document.getElementById("status-display").style.fontSize = "5rem";
+    document.getElementById("status-display").innerText = "段替え: 1/2";
+    document.getElementById("target-info").innerText = "次に生産する【完成品】かんばんを\nカメラに映してください";
+}
+
+function updateStatusDisplay(statusText, infoText) {
+    document.body.className = "ok";
+    document.getElementById("status-display").innerText = statusText;
+    document.getElementById("target-info").innerText = infoText;
+    setTimeout(() => {
+        isInterval = true; isProcessing = false;
+        document.body.className = "wait"; document.getElementById("status-display").innerText = "WAIT";
+        setTimeout(() => { resetToReady(); }, SCAN_INTERVAL_MS); 
+    }, 1200);
+}
+
+function showError(title, message) {
+    playBeep("ng"); document.body.className = "ng";
+    document.getElementById("status-display").style.fontSize = "5rem";
+    document.getElementById("status-display").innerText = title;
+    setTimeout(() => { alert(message); resetToReady(); }, 500);
 }
 
 function resetToReady() {
-    isProcessing = false;
-    isMasterSetMode_QR = false;
-    pendingMaster = null;
-    document.body.className = ""; 
-    document.getElementById("status-display").style.fontSize = "8rem";
+    isProcessing = false; isInterval = false; registerMode = 0; masterSetMode = 0; tempRegFinishedCode = ""; tempSetMaster = null;
+    document.body.className = ""; document.getElementById("status-display").style.fontSize = "7rem";
     document.getElementById("status-display").innerText = "READY";
-    document.getElementById("target-info").innerText = activeMaster ? activeMaster.name : "未選択";
+    
+    if (activeMaster) {
+        let nextText = "";
+        if (lastScannedType === "fin") { nextText = "<br><span style='font-size:2.5rem; color:#ffeb3b;'>▶ 次は【仕掛品】を待機中</span>"; } 
+        else if (lastScannedType === "wip") { nextText = "<br><span style='font-size:2.5rem; color:#ffeb3b;'>▶ 次は【完成品】を待機中</span>"; } 
+        else { nextText = "<br><span style='font-size:2rem; color:#ccc;'>▶ 最初はどちらからスキャンしてもOK</span>"; }
+        document.getElementById("target-info").innerHTML = activeMaster.name + nextText;
+    } else { document.getElementById("target-info").innerText = "未選択"; }
 }
 
-function updateStatus(ok) {
-    if (ok) {
-        okCount++; updateCountDisplay(); document.body.className = "ok"; document.getElementById("status-display").innerText = "OK";
-        setTimeout(() => {
-            isInterval = true; isProcessing = false; document.body.className = "wait"; document.getElementById("status-display").innerText = "WAIT";
-            setTimeout(() => { isInterval = false; document.body.className = ""; document.getElementById("status-display").innerText = "READY"; }, SCAN_INTERVAL_MS);
-        }, 1200);
-    } else {
-        document.body.className = "ng"; document.getElementById("status-display").innerText = "NG"; isLocked = true;
-        sendNotification("【NG発生】かんばん照合で不一致が発生しました");
-        const deviceName = localStorage.getItem("kb_v19_device_name") || "未設定端末";
-        const productName = activeMaster ? activeMaster.name : "製品未選択";
-        const shortcutMsg = `【${deviceName}】\n【NG発生】かんばん照合で不一致が発生しました\n(対象: ${productName})`;
-        const shortcutName = encodeURIComponent("QR通知");
-        const text = encodeURIComponent(shortcutMsg);
-        setTimeout(() => { window.location.href = `shortcuts://run-shortcut?name=${shortcutName}&input=text&text=${text}`; }, 1500);
-        setTimeout(() => { document.getElementById("lock-overlay").style.display = "flex"; document.getElementById("pw-input").focus(); }, 500);
-    }
-}
-
-function updateCountDisplay() { document.getElementById("count-display").innerText = `かんばん照合数: ${okCount} 枚`; }
-function resetCount() { okCount = 0; updateCountDisplay(); }
+function updateCounts() { document.getElementById("count-finished").innerText = `${finishedCount} 枚`; document.getElementById("count-wip").innerText = `${wipCount} 枚`; }
+function resetCount() { finishedCount = 0; wipCount = 0; updateCounts(); }
 
 function unlock() {
     const input = document.getElementById("pw-input").value;
-    const currentPassword = getDevicePassword();
-    if (input === currentPassword) {
+    if (input === getDevicePassword()) {
         isLocked = false; isProcessing = false; document.getElementById("lock-overlay").style.display = "none";
-        document.getElementById("pw-input").value = ""; document.body.className = ""; document.getElementById("status-display").innerText = "READY";
+        document.getElementById("pw-input").value = ""; resetToReady();
     } else { alert("パスワードが違います"); document.getElementById("pw-input").value = ""; }
 }
 
 function saveLog(res) {
     const now = new Date();
     logs.push({ date: now.toLocaleDateString(), time: now.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"}), master: activeMaster.name, result: res });
-    localStorage.setItem("kb_v19_logs", JSON.stringify(logs)); renderRecentLogs();
+    localStorage.setItem("kb_v20_logs", JSON.stringify(logs)); renderRecentLogs();
 }
 
-function registerNew() {
-    const img = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-    const code = jsQR(img.data, img.width, img.height);
-    if (!code) return alert("QRをカメラに映してください");
-    const name = prompt("① 製品名（画面表示用）を入力してください:");
-    if (!name) return;
-    const engraving = prompt("② 製品裏面の刻印（テキスト自動認識用）を入力してください:");
-    if (!engraving) return;
-    masters.push({ name: name.trim(), engraving: engraving.trim(), code: code.data }); saveMasters();
-    alert(`「${name.trim()}」を登録しました。\n(判定用刻印: ${engraving.trim()})`);
-}
-
-function saveMasters() { localStorage.setItem("kb_v19_masters", JSON.stringify(masters)); renderEditList(); }
+function saveMasters() { localStorage.setItem("kb_v20_masters", JSON.stringify(masters)); renderEditList(); }
 
 function renderEditList() {
     document.getElementById("edit-list").innerHTML = masters.map((m, i) => `
         <div style="border-bottom:2px solid #ddd; padding:15px; display:flex; justify-content:space-between; align-items:center;">
-            <div style="text-align:left;">
+            <div style="text-align:left; width: 75%;">
                 <b style="font-size:1.4rem;">${m.name}</b><br>
-                <span style="font-size:0.9rem; color:#666;">刻印: ${m.engraving || '未設定'}</span>
+                <span style="font-size:0.9rem; color:#007bff; font-weight:bold;">刻印: ${m.engraving || '未設定'}</span><br>
+                <span style="font-size:0.8rem; color:#666;">完: ${m.finishedCode.substring(0, 10)}... | 仕: ${m.wipCode.substring(0, 10)}...</span>
             </div>
-            <button onclick="deleteMaster(${i})" style="color:red; background:none; border:2px solid red; padding:10px 15px; border-radius:8px; font-weight:bold; cursor:pointer;">削除</button>
+            <button onclick="deleteMaster(${i})" style="color:red; background:none; border:2px solid red; padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">削除</button>
         </div>
     `).join("");
 }
 
-function deleteMaster(i) { if (confirm("削除しますか？")) { masters.splice(i,1); saveMasters(); } }
+function deleteMaster(i) { if (confirm("このペアを削除しますか？")) { masters.splice(i,1); saveMasters(); } }
 
 function renderRecentLogs() {
     const recent = logs.slice(-3).reverse();
-    document.getElementById("recent-logs").innerHTML = recent.map(l => `
-        <div class="log-item"><span><b style="color:${l.result==='OK'?'#28a745':'#dc3545'}">[${l.result}]</b> ${l.time}</span><span>${l.master}</span></div>
-    `).join("") || '<div style="color:#999; text-align:center; padding-top:40px;">履歴なし</div>';
+    document.getElementById("recent-logs").innerHTML = recent.map(l => {
+        let color = '#28a745'; if (l.result.includes('NG')) color = '#dc3545';
+        return `<div class="log-item"><span><b style="color:${color}">[${l.result}]</b> ${l.time}</span><span>${l.master}</span></div>`;
+    }).join("") || '<div style="color:#999; text-align:center; padding-top:40px;">履歴なし</div>';
 }
 
 function toggleModal(id) {
@@ -473,16 +491,19 @@ function toggleModal(id) {
 }
 
 function renderAnalysis() {
-    const stats = {}; let totalOk = 0; let totalNg = 0;
+    const stats = {}; let totalFin = 0; let totalWip = 0; let totalNg = 0;
     logs.forEach(l => {
         const key = `${l.date}__${l.master}`;
-        if (!stats[key]) stats[key] = { ok: 0, ng: 0 };
-        if (l.result === "OK") { stats[key].ok++; totalOk++; } else { stats[key].ng++; totalNg++; }
+        if (!stats[key]) stats[key] = { fin: 0, wip: 0, ng: 0 };
+        if (l.result.includes("完成品")) { stats[key].fin++; totalFin++; } 
+        else if (l.result.includes("仕掛品")) { stats[key].wip++; totalWip++; } 
+        else { stats[key].ng++; totalNg++; }
     });
-    let html = `<b>累計：</b> <span style="color:#28a745">OK ${totalOk}</span> / <span style="color:#dc3545">NG ${totalNg}</span><hr>`;
-    html += `<table style="width:100%; border-collapse:collapse; font-size:1.1rem;"><tr><th>日付</th><th>製品</th><th>OK</th><th>NG</th></tr>`;
+    let html = `<b>累計：</b> <span style="color:#28a745">完成品 ${totalFin} / 仕掛品 ${totalWip}</span> / <span style="color:#dc3545">NG ${totalNg}</span><hr>`;
+    html += `<table style="width:100%; border-collapse:collapse; font-size:1.1rem;"><tr><th>日付</th><th>製品</th><th>完</th><th>仕</th><th>NG</th></tr>`;
     Object.keys(stats).reverse().forEach(k => {
-        const [d, m] = k.split("__"); html += `<tr style="border-bottom:1px solid #ddd; text-align:center;"><td style="padding:10px">${d}</td><td style="text-align:left">${m}</td><td>${stats[k].ok}</td><td style="color:red">${stats[k].ng}</td></tr>`;
+        const [d, m] = k.split("__"); 
+        html += `<tr style="border-bottom:1px solid #ddd; text-align:center;"><td style="padding:10px">${d}</td><td style="text-align:left">${m}</td><td>${stats[k].fin}</td><td>${stats[k].wip}</td><td style="color:red">${stats[k].ng}</td></tr>`;
     });
     html += `</table>`;
     document.getElementById("summary-dashboard").innerHTML = html;
@@ -491,19 +512,11 @@ function renderAnalysis() {
 
 function clearLogs() {
     const input = prompt("履歴を削除するにはパスワードを入力してください:");
-    if (input === null) return;
     if (input === getDevicePassword()) {
         if (confirm("本当に全ての履歴を削除しますか？")) {
-            logs = []; localStorage.setItem("kb_v19_logs", "[]"); renderRecentLogs(); renderAnalysis(); alert("履歴を削除しました。");
+            logs = []; localStorage.setItem("kb_v20_logs", "[]"); renderRecentLogs(); renderAnalysis(); alert("履歴を削除しました。");
         }
-    } else { alert("パスワードが違います。"); }
-}
-
-function confirmFinish() {
-    if (isLocked) return;
-    if (confirm("生産を終了しますか？\n（かんばん照合枚数もリセットされます）")) {
-        resetToReady(); resetCount();
-    }
+    } else if (input !== null) { alert("パスワードが違います。"); }
 }
 
 function exportCSV() {
@@ -513,18 +526,26 @@ function exportCSV() {
     const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `scan_report.csv`; a.click();
 }
 
+function confirmFinish() {
+    if (isLocked) return;
+    if (confirm("生産を終了しますか？\n（かんばん照合枚数もリセットされます）")) {
+        activeMaster = null; isInterval = false; masterSetMode = 0; tempSetMaster = null; registerMode = 0; lastScannedType = null; 
+        document.body.className = ""; document.getElementById("status-display").innerText = "READY"; resetCount(); resetToReady();
+    }
+}
+
 function triggerIphoneShortcut(statusMessage) {
     try {
         const now = new Date();
         const callLog = { date: (now.getMonth() + 1) + "/" + now.getDate(), time: now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0'), master: "⚠️管理者呼び出し", result: "CALL" };
-        logs.unshift(callLog); localStorage.setItem("kb_v19_logs", JSON.stringify(logs));
+        logs.unshift(callLog); localStorage.setItem("kb_v20_logs", JSON.stringify(logs));
         if (typeof renderRecentLogs === "function") { renderRecentLogs(); }
     } catch (e) { console.error("Log error:", e); }
 
     sendNotification(statusMessage || "【呼び出し】管理者を呼んでいます");
-    const deviceName = localStorage.getItem("kb_v19_device_name") || "未設定端末";
+    const deviceName = localStorage.getItem("kb_v20_device_name") || "未設定端末";
     const productName = activeMaster ? activeMaster.name : "製品未選択";
-    const shortcutMsg = `【${deviceName}】\n${statusMessage || "管理者を呼んでいます"}\n(対象: ${productName})`;
+    const shortcutMsg = `【${deviceName}】\n${statusMessage || "管理者を呼んでいます"}\n(生産中: ${productName})`;
     
     setTimeout(() => { window.location.href = `shortcuts://run-shortcut?name=${encodeURIComponent("QR通知")}&input=text&text=${encodeURIComponent(shortcutMsg)}`; }, 1500); 
 
@@ -539,9 +560,9 @@ function triggerIphoneShortcut(statusMessage) {
 }
 
 function setDeviceName() {
-    const currentName = localStorage.getItem("kb_v19_device_name") || "";
+    const currentName = localStorage.getItem("kb_v20_device_name") || "";
     const newName = prompt("この端末の設置場所（例：Aライン、1号機など）を入力してください", currentName);
-    if (newName && newName.trim() !== "") { localStorage.setItem("kb_v19_device_name", newName.trim()); alert(`この端末を「${newName.trim()}」として登録しました。`); }
+    if (newName && newName.trim() !== "") { localStorage.setItem("kb_v20_device_name", newName.trim()); alert(`この端末を「${newName.trim()}」として登録しました。`); }
 }
 
 function setDevicePassword() {
@@ -553,14 +574,14 @@ function setDevicePassword() {
     if (!newPw || newPw.trim() === "") return alert("無効な入力です。");
     const confirmPw = prompt("確認のため、もう一度新しいパスワードを入力してください。");
     if (newPw !== confirmPw) return alert("入力された新しいパスワードが一致しません。");
-    localStorage.setItem("kb_v19_password", newPw.trim()); alert(`管理者解除パスワードを「${newPw.trim()}」に変更しました。`);
+    localStorage.setItem("kb_v20_password", newPw.trim()); alert(`管理者解除パスワードを「${newPw.trim()}」に変更しました。`);
 }
 
 function sendNotification(messageText) {
     const gasUrl = "https://script.google.com/macros/s/AKfycbzaCRZV4O9qWmM0jPIMrTVoCoePztgWpyyW5aIkFEY6XA67FH-e-d8TAlIOFu0IMQqpOA/exec"; 
-    const deviceName = localStorage.getItem("kb_v19_device_name") || "未設定端末";
+    const deviceName = localStorage.getItem("kb_v20_device_name") || "未設定端末";
     const productName = activeMaster ? activeMaster.name : "製品未選択";
-    fetch(gasUrl, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `【${deviceName}】\n${messageText}\n(対象: ${productName})` }) }).catch(e => console.error(e));
+    fetch(gasUrl, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `【${deviceName}】\n${messageText}\n(生産中: ${productName})` }) }).catch(e => console.error(e));
 }
 
 renderEditList(); 

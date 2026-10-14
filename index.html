@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>かんばん照合君（刻印OCR・タブ増殖防止版）</title>
+    <title>かんばん照合君（完全自動・タブ増殖防止版）</title>
     
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     
@@ -133,7 +133,7 @@
     </div>
 
 <script>
-function getDevicePassword() { return localStorage.getItem("kb_v24_password") || "8181"; }
+function getDevicePassword() { return localStorage.getItem("kb_v26_password") || "8181"; }
 
 const SCAN_INTERVAL_MS = 2500;
 const ANALYSIS_INTERVAL = 200;
@@ -148,8 +148,8 @@ let isInterval = false;
 let currentFacingMode = "user";
 let lastAnalysisTime = 0;
 
-let masters = JSON.parse(localStorage.getItem("kb_v24_masters")) || [];
-let logs = JSON.parse(localStorage.getItem("kb_v24_logs")) || [];
+let masters = JSON.parse(localStorage.getItem("kb_v26_masters")) || [];
+let logs = JSON.parse(localStorage.getItem("kb_v26_logs")) || [];
 let activeMaster = null;
 
 let okCount = 0;
@@ -189,8 +189,6 @@ function playBeep(type) {
 async function startApp() {
     document.getElementById("start-overlay").style.display = "none";
     await initCamera();
-    // 起動時にハッシュデータがあるかチェック
-    checkHashData();
 }
 
 async function initCamera() {
@@ -230,8 +228,9 @@ function tick() {
 }
 
 // ========================================================
-// ★ タブ増殖防止！ハッシュ（#）を使ったデータの受け取り
+// ★ 出荷用アプリの手法（URLエンコード＋ハッシュ検知）で全自動化
 // ========================================================
+
 function checkHashData() {
     const hashString = window.location.hash.substring(1);
     if (!hashString) return;
@@ -240,40 +239,51 @@ function checkHashData() {
     const engravingText = params.get("engraving");
     
     if (engravingText) {
-        // ハッシュを消してURLを綺麗にする（次回も発火できるように）
+        // ハッシュを消してURLを綺麗にする
         window.history.replaceState(null, '', window.location.pathname);
         
-        let normDetected = engravingText.replace(/\s+/g, '').toLowerCase();
-        let matchedMaster = masters.find(m => {
-            let target = m.engraving || m.name;
-            if (!target || target.length < 2) return false;
-            let normTarget = target.replace(/\s+/g, '').toLowerCase();
-            return normDetected.includes(normTarget);
-        });
+        // 音声エンジンが止まっている場合があるので再開
+        if (audioCtx && audioCtx.state === 'suspended') { audioCtx.resume(); }
 
-        if (matchedMaster) {
-            playBeep("ok");
-            activeMaster = matchedMaster;
-            resetCount();
-            
-            document.body.className = "ok";
-            document.getElementById("status-display").style.fontSize = "5rem";
-            document.getElementById("status-display").innerText = "段替え完了！";
-            document.getElementById("target-info").innerText = activeMaster.name;
-            
-            setTimeout(() => { resetToReady(); }, 2000);
-        } else {
-            playBeep("ng");
-            alert(`マスターと一致する刻印が見つかりませんでした。\n\n【読取結果】\n${engravingText}`);
-        }
+        setTimeout(() => {
+            let normDetected = engravingText.replace(/\s+/g, '').toLowerCase();
+            let matchedMaster = masters.find(m => {
+                let target = m.engraving || m.name;
+                if (!target || target.length < 2) return false;
+                let normTarget = target.replace(/\s+/g, '').toLowerCase();
+                return normDetected.includes(normTarget);
+            });
+
+            if (matchedMaster) {
+                playBeep("ok");
+                activeMaster = matchedMaster;
+                resetCount();
+                
+                document.body.className = "ok";
+                document.getElementById("status-display").style.fontSize = "5rem";
+                document.getElementById("status-display").innerText = "段替え完了！";
+                document.getElementById("target-info").innerText = activeMaster.name;
+                
+                setTimeout(() => { resetToReady(); }, 2000);
+            } else {
+                playBeep("ng");
+                alert(`登録されているマスターと一致する刻印が見つかりませんでした。\n\n【読取結果】\n${engravingText}`);
+            }
+        }, 100);
     }
 }
 
-// ハッシュの変更をリアルタイムで検知する
+// 起動時とハッシュ変更時の両方で監視する
+window.onload = function() {
+    renderEditList(); 
+    renderRecentLogs();
+    checkHashData();
+};
 window.addEventListener("hashchange", checkHashData);
 
 function triggerShortcutOCR() {
     if (isLocked) return;
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     const shortcutName = encodeURIComponent("自動刻印スキャン");
     window.location.href = `shortcuts://run-shortcut?name=${shortcutName}`;
 }
@@ -286,7 +296,7 @@ function processQR(qrData) {
         setTimeout(() => {
             const name = prompt("① かんばんをスキャンしました。\nこの製品名（品番）を入力してください:");
             if (name && name.trim() !== "") {
-                const eng = prompt("② この製品の【刻印】の文字を入力してください:\n(※純正カメラでの段替え用に使います)");
+                const eng = prompt("② この製品の【刻印】の文字を入力してください:\n(※自動段替え用に使います)");
                 masters.push({ name: name.trim(), code: qrData, engraving: eng ? eng.trim() : "" });
                 saveMasters(); alert(`「${name.trim()}」を登録しました！`);
             } else { alert("登録をキャンセルしました。"); }
@@ -353,7 +363,7 @@ function triggerNG(title, message, logText) {
     document.getElementById("status-display").innerText = title;
     saveLog(logText); sendNotification(`【NG発生】${message.replace(/\n/g, " ")}`);
 
-    const deviceName = localStorage.getItem("kb_v24_device_name") || "未設定端末";
+    const deviceName = localStorage.getItem("kb_v26_device_name") || "未設定端末";
     const shortcutMsg = `【${deviceName}】\n【NG発生】${message.replace(/\n/g, " ")}\n(生産中: ${activeMaster ? activeMaster.name : "未選択"})`;
     const shortcutName = encodeURIComponent("QR通知");
 
@@ -393,10 +403,10 @@ function unlock() {
 function saveLog(res) {
     const now = new Date();
     logs.push({ date: now.toLocaleDateString(), time: now.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"}), master: activeMaster.name, result: res });
-    localStorage.setItem("kb_v24_logs", JSON.stringify(logs)); renderRecentLogs();
+    localStorage.setItem("kb_v26_logs", JSON.stringify(logs)); renderRecentLogs();
 }
 
-function saveMasters() { localStorage.setItem("kb_v24_masters", JSON.stringify(masters)); renderEditList(); }
+function saveMasters() { localStorage.setItem("kb_v26_masters", JSON.stringify(masters)); renderEditList(); }
 
 function renderEditList() {
     document.getElementById("edit-list").innerHTML = masters.map((m, i) => `
@@ -449,7 +459,7 @@ function clearLogs() {
     const input = prompt("履歴を削除するにはパスワードを入力してください:");
     if (input === getDevicePassword()) {
         if (confirm("本当に全ての履歴を削除しますか？")) {
-            logs = []; localStorage.setItem("kb_v24_logs", "[]"); renderRecentLogs(); renderAnalysis(); alert("履歴を削除しました。");
+            logs = []; localStorage.setItem("kb_v26_logs", "[]"); renderRecentLogs(); renderAnalysis(); alert("履歴を削除しました。");
         }
     } else if (input !== null) { alert("パスワードが違います。"); }
 }
@@ -473,12 +483,12 @@ function triggerIphoneShortcut(statusMessage) {
     try {
         const now = new Date();
         const callLog = { date: (now.getMonth() + 1) + "/" + now.getDate(), time: now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0'), master: "⚠️管理者呼び出し", result: "CALL" };
-        logs.unshift(callLog); localStorage.setItem("kb_v24_logs", JSON.stringify(logs));
+        logs.unshift(callLog); localStorage.setItem("kb_v26_logs", JSON.stringify(logs));
         if (typeof renderRecentLogs === "function") { renderRecentLogs(); }
     } catch (e) { console.error("Log error:", e); }
 
     sendNotification(statusMessage || "【呼び出し】管理者を呼んでいます");
-    const deviceName = localStorage.getItem("kb_v24_device_name") || "未設定端末";
+    const deviceName = localStorage.getItem("kb_v26_device_name") || "未設定端末";
     const productName = activeMaster ? activeMaster.name : "製品未選択";
     const shortcutMsg = `【${deviceName}】\n${statusMessage || "管理者を呼んでいます"}\n(生産中: ${productName})`;
     
@@ -495,9 +505,9 @@ function triggerIphoneShortcut(statusMessage) {
 }
 
 function setDeviceName() {
-    const currentName = localStorage.getItem("kb_v24_device_name") || "";
+    const currentName = localStorage.getItem("kb_v26_device_name") || "";
     const newName = prompt("この端末の設置場所（例：Aライン、1号機など）を入力してください", currentName);
-    if (newName && newName.trim() !== "") { localStorage.setItem("kb_v24_device_name", newName.trim()); alert(`この端末を「${newName.trim()}」として登録しました。`); }
+    if (newName && newName.trim() !== "") { localStorage.setItem("kb_v26_device_name", newName.trim()); alert(`この端末を「${newName.trim()}」として登録しました。`); }
 }
 
 function setDevicePassword() {
@@ -509,18 +519,15 @@ function setDevicePassword() {
     if (!newPw || newPw.trim() === "") return alert("無効な入力です。");
     const confirmPw = prompt("確認のため、もう一度新しいパスワードを入力してください。");
     if (newPw !== confirmPw) return alert("入力された新しいパスワードが一致しません。");
-    localStorage.setItem("kb_v24_password", newPw.trim()); alert(`管理者解除パスワードを「${newPw.trim()}」に変更しました。`);
+    localStorage.setItem("kb_v26_password", newPw.trim()); alert(`管理者解除パスワードを「${newPw.trim()}」に変更しました。`);
 }
 
 function sendNotification(messageText) {
     const gasUrl = "https://script.google.com/macros/s/AKfycbzaCRZV4O9qWmM0jPIMrTVoCoePztgWpyyW5aIkFEY6XA67FH-e-d8TAlIOFu0IMQqpOA/exec"; 
-    const deviceName = localStorage.getItem("kb_v24_device_name") || "未設定端末";
+    const deviceName = localStorage.getItem("kb_v26_device_name") || "未設定端末";
     const productName = activeMaster ? activeMaster.name : "製品未選択";
     fetch(gasUrl, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `【${deviceName}】\n${messageText}\n(生産中: ${productName})` }) }).catch(e => console.error(e));
 }
-
-renderEditList(); 
-renderRecentLogs();
 </script>
 </body>
 </html>

@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>かんばん照合君（PWA・純正OCR段替え版）</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>かんばん照合君（刻印OCR・タブ増殖防止版）</title>
     
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     
@@ -50,10 +51,6 @@
         #start-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:#111; display:flex; justify-content:center; align-items:center; z-index:9999; font-size:2rem; font-weight:bold; color:white; cursor: pointer; }
         .modal { position:fixed; top:0; left:0; width:100%; height:100%; display:none; flex-direction:column; background:#fff; z-index:5000; color:#333; }
         .modal-content { padding: 20px; flex-grow: 1; overflow-y: auto; }
-
-        /* ★純正OCR用のオーバーレイ画面 */
-        #ocr-input-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:8000; flex-direction:column; justify-content:center; align-items:center; color:white; padding:20px; box-sizing:border-box; }
-        #native-ocr-input { font-size: 2rem; padding: 20px; width: 90%; max-width: 400px; border-radius: 15px; text-align: center; border: 4px solid #007bff; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -62,16 +59,6 @@
         <p id="lock-reason">異品混入の可能性があります！<br>管理者のパスワードが必要です。</p>
         <input type="number" id="pw-input" placeholder="****" inputmode="numeric">
         <button class="btn-unlock" onclick="unlock()">解除</button>
-    </div>
-
-    <!-- ★純正OCR呼び出し用の専用画面 -->
-    <div id="ocr-input-overlay">
-        <h2 style="font-size:3rem; color:#007bff; margin-bottom:10px;">刻印スキャン</h2>
-        <p style="font-size:1.5rem; text-align:center; margin-bottom:30px; font-weight:bold;">
-            下の白い枠をタップして、<br>キーボードの「📷マーク(テキストスキャン)」<br>を選択してください。
-        </p>
-        <input type="text" id="native-ocr-input" placeholder="ここをタップ → 📷マーク">
-        <button onclick="cancelOcr()" style="margin-top:40px; padding:15px 40px; font-size:1.5rem; background:#555; color:white; border:none; border-radius:10px; font-weight:bold;">戻る</button>
     </div>
 
     <div id="start-overlay" onclick="startApp()">タップして開始</div>
@@ -96,7 +83,7 @@
     </div>
 
     <div class="master-panel">
-        <button onclick="openOcrInput()" style="flex: 1; height: 75px; background: #007bff; color: white; border: none; border-radius: 15px; font-size: 1.5rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
+        <button onclick="triggerShortcutOCR()" style="flex: 1; height: 75px; background: #007bff; color: white; border: none; border-radius: 15px; font-size: 1.5rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
             📷 刻印で段替え
         </button>
         <button onclick="startQrMasterSetMode()" style="flex: 1; height: 75px; background: #28a745; color: white; border: none; border-radius: 15px; font-size: 1.5rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
@@ -202,6 +189,8 @@ function playBeep(type) {
 async function startApp() {
     document.getElementById("start-overlay").style.display = "none";
     await initCamera();
+    // 起動時にハッシュデータがあるかチェック
+    checkHashData();
 }
 
 async function initCamera() {
@@ -240,60 +229,56 @@ function tick() {
     requestAnimationFrame(tick);
 }
 
-// ==========================================
-// ★ ショートカットの別タブ問題を解決する「純正OCR（テキストスキャン）」
-// ==========================================
-function openOcrInput() {
+// ========================================================
+// ★ タブ増殖防止！ハッシュ（#）を使ったデータの受け取り
+// ========================================================
+function checkHashData() {
+    const hashString = window.location.hash.substring(1);
+    if (!hashString) return;
+
+    const params = new URLSearchParams(hashString);
+    const engravingText = params.get("engraving");
+    
+    if (engravingText) {
+        // ハッシュを消してURLを綺麗にする（次回も発火できるように）
+        window.history.replaceState(null, '', window.location.pathname);
+        
+        let normDetected = engravingText.replace(/\s+/g, '').toLowerCase();
+        let matchedMaster = masters.find(m => {
+            let target = m.engraving || m.name;
+            if (!target || target.length < 2) return false;
+            let normTarget = target.replace(/\s+/g, '').toLowerCase();
+            return normDetected.includes(normTarget);
+        });
+
+        if (matchedMaster) {
+            playBeep("ok");
+            activeMaster = matchedMaster;
+            resetCount();
+            
+            document.body.className = "ok";
+            document.getElementById("status-display").style.fontSize = "5rem";
+            document.getElementById("status-display").innerText = "段替え完了！";
+            document.getElementById("target-info").innerText = activeMaster.name;
+            
+            setTimeout(() => { resetToReady(); }, 2000);
+        } else {
+            playBeep("ng");
+            alert(`マスターと一致する刻印が見つかりませんでした。\n\n【読取結果】\n${engravingText}`);
+        }
+    }
+}
+
+// ハッシュの変更をリアルタイムで検知する
+window.addEventListener("hashchange", checkHashData);
+
+function triggerShortcutOCR() {
     if (isLocked) return;
-    document.getElementById('native-ocr-input').value = '';
-    document.getElementById('ocr-input-overlay').style.display = 'flex';
+    const shortcutName = encodeURIComponent("自動刻印スキャン");
+    window.location.href = `shortcuts://run-shortcut?name=${shortcutName}`;
 }
 
-function cancelOcr() {
-    document.getElementById('ocr-input-overlay').style.display = 'none';
-}
-
-// テキストが入力された瞬間に自動判定して画面を切り替える
-document.getElementById('native-ocr-input').addEventListener('input', function(e) {
-    let val = e.target.value;
-    if (val.length >= 2) {
-        // iOSが文字を入力し終えるまでの一瞬(0.5秒)だけ待機して判定
-        setTimeout(() => {
-            checkEngraving(document.getElementById('native-ocr-input').value);
-        }, 500);
-    }
-});
-
-function checkEngraving(detectedText) {
-    let normDetected = detectedText.replace(/\s+/g, '').toLowerCase();
-    let matchedMaster = masters.find(m => {
-        let target = m.engraving;
-        if (!target || target.length < 2) return false;
-        let normTarget = target.replace(/\s+/g, '').toLowerCase();
-        return normDetected.includes(normTarget);
-    });
-
-    if (matchedMaster) {
-        document.getElementById('ocr-input-overlay').style.display = 'none';
-        document.getElementById('native-ocr-input').value = '';
-        
-        activeMaster = matchedMaster;
-        resetCount();
-        playBeep("ok");
-        
-        document.body.className = "ok";
-        document.getElementById("status-display").style.fontSize = "5rem";
-        document.getElementById("status-display").innerText = "段替え完了！";
-        document.getElementById("target-info").innerText = activeMaster.name;
-        
-        setTimeout(() => { resetToReady(); }, 2000);
-    } else {
-        playBeep("ng");
-        alert(`マスターと一致する刻印が見つかりません。\n読取結果: ${detectedText}`);
-        document.getElementById('native-ocr-input').value = '';
-    }
-}
-// ==========================================
+// ========================================================
 
 function processQR(qrData) {
     if (registerMode === 1) {

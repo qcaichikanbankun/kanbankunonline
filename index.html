@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>かんばん照合君（刻印OCR段替え・単一マスター版）</title>
+    <title>かんばん照合君（PWA・純正OCR段替え版）</title>
     
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     
@@ -50,6 +50,10 @@
         #start-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:#111; display:flex; justify-content:center; align-items:center; z-index:9999; font-size:2rem; font-weight:bold; color:white; cursor: pointer; }
         .modal { position:fixed; top:0; left:0; width:100%; height:100%; display:none; flex-direction:column; background:#fff; z-index:5000; color:#333; }
         .modal-content { padding: 20px; flex-grow: 1; overflow-y: auto; }
+
+        /* ★純正OCR用のオーバーレイ画面 */
+        #ocr-input-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:8000; flex-direction:column; justify-content:center; align-items:center; color:white; padding:20px; box-sizing:border-box; }
+        #native-ocr-input { font-size: 2rem; padding: 20px; width: 90%; max-width: 400px; border-radius: 15px; text-align: center; border: 4px solid #007bff; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -58,6 +62,16 @@
         <p id="lock-reason">異品混入の可能性があります！<br>管理者のパスワードが必要です。</p>
         <input type="number" id="pw-input" placeholder="****" inputmode="numeric">
         <button class="btn-unlock" onclick="unlock()">解除</button>
+    </div>
+
+    <!-- ★純正OCR呼び出し用の専用画面 -->
+    <div id="ocr-input-overlay">
+        <h2 style="font-size:3rem; color:#007bff; margin-bottom:10px;">刻印スキャン</h2>
+        <p style="font-size:1.5rem; text-align:center; margin-bottom:30px; font-weight:bold;">
+            下の白い枠をタップして、<br>キーボードの「📷マーク(テキストスキャン)」<br>を選択してください。
+        </p>
+        <input type="text" id="native-ocr-input" placeholder="ここをタップ → 📷マーク">
+        <button onclick="cancelOcr()" style="margin-top:40px; padding:15px 40px; font-size:1.5rem; background:#555; color:white; border:none; border-radius:10px; font-weight:bold;">戻る</button>
     </div>
 
     <div id="start-overlay" onclick="startApp()">タップして開始</div>
@@ -82,7 +96,7 @@
     </div>
 
     <div class="master-panel">
-        <button onclick="triggerShortcutOCR()" style="flex: 1; height: 75px; background: #007bff; color: white; border: none; border-radius: 15px; font-size: 1.5rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
+        <button onclick="openOcrInput()" style="flex: 1; height: 75px; background: #007bff; color: white; border: none; border-radius: 15px; font-size: 1.5rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
             📷 刻印で段替え
         </button>
         <button onclick="startQrMasterSetMode()" style="flex: 1; height: 75px; background: #28a745; color: white; border: none; border-radius: 15px; font-size: 1.5rem; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
@@ -132,8 +146,7 @@
     </div>
 
 <script>
-// シンプルな単一マスター仕様に戻したため、保存領域を v23 とします
-function getDevicePassword() { return localStorage.getItem("kb_v23_password") || "8181"; }
+function getDevicePassword() { return localStorage.getItem("kb_v24_password") || "8181"; }
 
 const SCAN_INTERVAL_MS = 2500;
 const ANALYSIS_INTERVAL = 200;
@@ -148,8 +161,8 @@ let isInterval = false;
 let currentFacingMode = "user";
 let lastAnalysisTime = 0;
 
-let masters = JSON.parse(localStorage.getItem("kb_v23_masters")) || [];
-let logs = JSON.parse(localStorage.getItem("kb_v23_logs")) || [];
+let masters = JSON.parse(localStorage.getItem("kb_v24_masters")) || [];
+let logs = JSON.parse(localStorage.getItem("kb_v24_logs")) || [];
 let activeMaster = null;
 
 let okCount = 0;
@@ -157,7 +170,6 @@ let isProcessing = false;
 let lastSeenQR = "";
 let seenCount = 0;
 
-// モード管理: 0=通常, 1=登録(QR待ち), 2=段替え(QR待ち)
 let registerMode = 0;
 let masterSetMode = 0;
 
@@ -228,61 +240,68 @@ function tick() {
     requestAnimationFrame(tick);
 }
 
-// ========================================================
-// ★ ショートカット（URL）からの戻りを検知して「自動段替え」
-// ========================================================
-window.addEventListener("DOMContentLoaded", () => {
-    const params = new URLSearchParams(window.location.search);
-    const engravingText = params.get("engraving");
-    
-    if (engravingText) {
-        // URLのパラメータ部分を消して綺麗にする
-        window.history.replaceState({}, document.title, window.location.pathname);
-        
-        let normDetected = engravingText.replace(/\s+/g, '').toLowerCase();
-        let matchedMaster = masters.find(m => {
-            let target = m.engraving || m.name;
-            if (!target || target.length < 2) return false;
-            let normTarget = target.replace(/\s+/g, '').toLowerCase();
-            return normDetected.includes(normTarget);
-        });
+// ==========================================
+// ★ ショートカットの別タブ問題を解決する「純正OCR（テキストスキャン）」
+// ==========================================
+function openOcrInput() {
+    if (isLocked) return;
+    document.getElementById('native-ocr-input').value = '';
+    document.getElementById('ocr-input-overlay').style.display = 'flex';
+}
 
-        if (matchedMaster) {
-            // ★刻印と一致するマスターがあったら「一発で段替え完了」
-            playBeep("ok");
-            activeMaster = matchedMaster;
-            resetCount();
-            
-            document.body.className = "ok";
-            document.getElementById("status-display").style.fontSize = "5rem";
-            document.getElementById("status-display").innerText = "段替え完了！";
-            document.getElementById("target-info").innerText = activeMaster.name;
-            
-            setTimeout(() => { resetToReady(); }, 2000);
-        } else {
-            playBeep("ng");
-            alert(`登録されているマスターと一致する刻印が見つかりませんでした。\n\n【カメラの読取結果】\n${engravingText}`);
-        }
+function cancelOcr() {
+    document.getElementById('ocr-input-overlay').style.display = 'none';
+}
+
+// テキストが入力された瞬間に自動判定して画面を切り替える
+document.getElementById('native-ocr-input').addEventListener('input', function(e) {
+    let val = e.target.value;
+    if (val.length >= 2) {
+        // iOSが文字を入力し終えるまでの一瞬(0.5秒)だけ待機して判定
+        setTimeout(() => {
+            checkEngraving(document.getElementById('native-ocr-input').value);
+        }, 500);
     }
 });
 
-// ショートカット（純正カメラ）を起動するボタン
-function triggerShortcutOCR() {
-    if (isLocked) return;
-    const shortcutName = encodeURIComponent("自動刻印スキャン");
-    window.location.href = `shortcuts://run-shortcut?name=${shortcutName}`;
-}
+function checkEngraving(detectedText) {
+    let normDetected = detectedText.replace(/\s+/g, '').toLowerCase();
+    let matchedMaster = masters.find(m => {
+        let target = m.engraving;
+        if (!target || target.length < 2) return false;
+        let normTarget = target.replace(/\s+/g, '').toLowerCase();
+        return normDetected.includes(normTarget);
+    });
 
-// ========================================================
+    if (matchedMaster) {
+        document.getElementById('ocr-input-overlay').style.display = 'none';
+        document.getElementById('native-ocr-input').value = '';
+        
+        activeMaster = matchedMaster;
+        resetCount();
+        playBeep("ok");
+        
+        document.body.className = "ok";
+        document.getElementById("status-display").style.fontSize = "5rem";
+        document.getElementById("status-display").innerText = "段替え完了！";
+        document.getElementById("target-info").innerText = activeMaster.name;
+        
+        setTimeout(() => { resetToReady(); }, 2000);
+    } else {
+        playBeep("ng");
+        alert(`マスターと一致する刻印が見つかりません。\n読取結果: ${detectedText}`);
+        document.getElementById('native-ocr-input').value = '';
+    }
+}
+// ==========================================
 
 function processQR(qrData) {
-    // 1. マスター登録モード
     if (registerMode === 1) {
         isProcessing = true; playBeep("ok");
         setTimeout(() => {
             const name = prompt("① かんばんをスキャンしました。\nこの製品名（品番）を入力してください:");
             if (name && name.trim() !== "") {
-                const eng = prompt("② この製品の【刻印】の文字を入力してください:\n(※カメラでの自動段替え用に使います)");
+                const eng = prompt("② この製品の【刻印】の文字を入力してください:\n(※純正カメラでの段替え用に使います)");
                 masters.push({ name: name.trim(), code: qrData, engraving: eng ? eng.trim() : "" });
                 saveMasters(); alert(`「${name.trim()}」を登録しました！`);
             } else { alert("登録をキャンセルしました。"); }
@@ -290,7 +309,6 @@ function processQR(qrData) {
         }, 300); return;
     }
 
-    // 2. QRでの手動段替えモード
     if (masterSetMode === 1) {
         isProcessing = true;
         let matched = masters.find(m => m.code === qrData);
@@ -305,7 +323,6 @@ function processQR(qrData) {
         return;
     }
 
-    // 3. 通常の照合モード
     if (activeMaster && document.getElementById("mgmt-modal").style.display !== "flex") {
         isProcessing = true;
         if (qrData === activeMaster.code) {
@@ -351,7 +368,7 @@ function triggerNG(title, message, logText) {
     document.getElementById("status-display").innerText = title;
     saveLog(logText); sendNotification(`【NG発生】${message.replace(/\n/g, " ")}`);
 
-    const deviceName = localStorage.getItem("kb_v23_device_name") || "未設定端末";
+    const deviceName = localStorage.getItem("kb_v24_device_name") || "未設定端末";
     const shortcutMsg = `【${deviceName}】\n【NG発生】${message.replace(/\n/g, " ")}\n(生産中: ${activeMaster ? activeMaster.name : "未選択"})`;
     const shortcutName = encodeURIComponent("QR通知");
 
@@ -391,10 +408,10 @@ function unlock() {
 function saveLog(res) {
     const now = new Date();
     logs.push({ date: now.toLocaleDateString(), time: now.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"}), master: activeMaster.name, result: res });
-    localStorage.setItem("kb_v23_logs", JSON.stringify(logs)); renderRecentLogs();
+    localStorage.setItem("kb_v24_logs", JSON.stringify(logs)); renderRecentLogs();
 }
 
-function saveMasters() { localStorage.setItem("kb_v23_masters", JSON.stringify(masters)); renderEditList(); }
+function saveMasters() { localStorage.setItem("kb_v24_masters", JSON.stringify(masters)); renderEditList(); }
 
 function renderEditList() {
     document.getElementById("edit-list").innerHTML = masters.map((m, i) => `
@@ -447,7 +464,7 @@ function clearLogs() {
     const input = prompt("履歴を削除するにはパスワードを入力してください:");
     if (input === getDevicePassword()) {
         if (confirm("本当に全ての履歴を削除しますか？")) {
-            logs = []; localStorage.setItem("kb_v23_logs", "[]"); renderRecentLogs(); renderAnalysis(); alert("履歴を削除しました。");
+            logs = []; localStorage.setItem("kb_v24_logs", "[]"); renderRecentLogs(); renderAnalysis(); alert("履歴を削除しました。");
         }
     } else if (input !== null) { alert("パスワードが違います。"); }
 }
@@ -471,12 +488,12 @@ function triggerIphoneShortcut(statusMessage) {
     try {
         const now = new Date();
         const callLog = { date: (now.getMonth() + 1) + "/" + now.getDate(), time: now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0'), master: "⚠️管理者呼び出し", result: "CALL" };
-        logs.unshift(callLog); localStorage.setItem("kb_v23_logs", JSON.stringify(logs));
+        logs.unshift(callLog); localStorage.setItem("kb_v24_logs", JSON.stringify(logs));
         if (typeof renderRecentLogs === "function") { renderRecentLogs(); }
     } catch (e) { console.error("Log error:", e); }
 
     sendNotification(statusMessage || "【呼び出し】管理者を呼んでいます");
-    const deviceName = localStorage.getItem("kb_v23_device_name") || "未設定端末";
+    const deviceName = localStorage.getItem("kb_v24_device_name") || "未設定端末";
     const productName = activeMaster ? activeMaster.name : "製品未選択";
     const shortcutMsg = `【${deviceName}】\n${statusMessage || "管理者を呼んでいます"}\n(生産中: ${productName})`;
     
@@ -493,9 +510,9 @@ function triggerIphoneShortcut(statusMessage) {
 }
 
 function setDeviceName() {
-    const currentName = localStorage.getItem("kb_v23_device_name") || "";
+    const currentName = localStorage.getItem("kb_v24_device_name") || "";
     const newName = prompt("この端末の設置場所（例：Aライン、1号機など）を入力してください", currentName);
-    if (newName && newName.trim() !== "") { localStorage.setItem("kb_v23_device_name", newName.trim()); alert(`この端末を「${newName.trim()}」として登録しました。`); }
+    if (newName && newName.trim() !== "") { localStorage.setItem("kb_v24_device_name", newName.trim()); alert(`この端末を「${newName.trim()}」として登録しました。`); }
 }
 
 function setDevicePassword() {
@@ -507,12 +524,12 @@ function setDevicePassword() {
     if (!newPw || newPw.trim() === "") return alert("無効な入力です。");
     const confirmPw = prompt("確認のため、もう一度新しいパスワードを入力してください。");
     if (newPw !== confirmPw) return alert("入力された新しいパスワードが一致しません。");
-    localStorage.setItem("kb_v23_password", newPw.trim()); alert(`管理者解除パスワードを「${newPw.trim()}」に変更しました。`);
+    localStorage.setItem("kb_v24_password", newPw.trim()); alert(`管理者解除パスワードを「${newPw.trim()}」に変更しました。`);
 }
 
 function sendNotification(messageText) {
     const gasUrl = "https://script.google.com/macros/s/AKfycbzaCRZV4O9qWmM0jPIMrTVoCoePztgWpyyW5aIkFEY6XA67FH-e-d8TAlIOFu0IMQqpOA/exec"; 
-    const deviceName = localStorage.getItem("kb_v23_device_name") || "未設定端末";
+    const deviceName = localStorage.getItem("kb_v24_device_name") || "未設定端末";
     const productName = activeMaster ? activeMaster.name : "製品未選択";
     fetch(gasUrl, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `【${deviceName}】\n${messageText}\n(生産中: ${productName})` }) }).catch(e => console.error(e));
 }
